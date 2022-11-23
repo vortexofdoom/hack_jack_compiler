@@ -9,10 +9,10 @@ pub struct Tokenizer {
 pub fn create_token(s: &str) -> Result<Token, Box<dyn Error>> {
     if let Ok(n) = s.parse::<i16>() {
         if n >= 0 {
-            return Token::IntConst(n)
+            return Ok(Token::IntConst(n))
         }
     }
-    return Token::StringConst(String::from("Hi"));
+    Ok(Token::StringConst(String::from(s)))
 }
 
 pub fn parse(code: String) -> Result<Vec<Token>, Box<dyn Error>> {
@@ -27,24 +27,44 @@ pub fn parse(code: String) -> Result<Vec<Token>, Box<dyn Error>> {
     let mut tokens = vec![];
     let mut chars = code.chars().enumerate().peekable();
     while let Some((i, c)) = chars.next() {
+        if in_comment {
+            if multiline_comment {
+                if c == '*' {
+                    if let Some((_, c)) = chars.next() {
+                        in_comment = c == '/';
+                        multiline_comment = in_comment;
+                    }
+                }
+            } else {
+                if c == '\n' {
+                    in_comment = false;
+                }
+            }
+        } else if in_string {
+            if c == '"' {
+                tokens.push(Token::StringConst(code[str_start..i].to_string()));
+                in_string = false;
+            }
+        } else {
+
+        }
+        if c.is_numeric() {
+
+        }
         match c {
             '"' => {
                 if !in_string {
                     (in_string, str_start) = (true, i + 1);
                 } else {
-                    tokens.push(Token::StringConst(code[str_start..i].to_string()));
-                    in_string = false;
+                    
                 }
             }
             '/' => {
-                if !in_comment {
-                    if let Some((_, '/')) = chars.peek() {
-                        (in_comment, multiline_comment) = (true, false);
-                    }
-                    if let Some((_, '*')) = chars.peek() {
-                        (in_comment, multiline_comment) = (true, true);
-                    }
-                    else {
+                if !in_comment && !in_string {
+                    if let Some((_, '/')) | Some((_, '*')) = chars.peek() {
+                        in_comment = true;
+                        multiline_comment = chars.next().unwrap().1 == '*'; 
+                    } else {
                         tokens.push(Token::Symbol('/'));
                     }
                 }
@@ -58,7 +78,7 @@ pub fn parse(code: String) -> Result<Vec<Token>, Box<dyn Error>> {
                     tokens.push(Token::Symbol('*'));
                 }
             }
-            '_' => {}
+            ' ' => {}
             '\n' => {}
             _ => {},
         }
@@ -87,22 +107,7 @@ pub fn parse(code: String) -> Result<Vec<Token>, Box<dyn Error>> {
                 tokens.push(Token::IntConst(n));
                 
             }
-        } else {
-            if c == '/' {
-                if !in_comment {
-                    if &code[i..=i+1] == "//" {
-                        in_comment = true;
-                        multiline_comment = false;
-                    } else if &code[i..=i+1] == "/*" {
-                        in_comment = true;
-                        multiline_comment = true;
-                    } else {
-                        tokens.push(Token::Symbol(c));
-                    }
-                } else if multiline_comment {
-
-                }
-            } else if c == '\n' {
+        } else if c == '\n' {
                 if in_comment && !multiline_comment {
                     in_comment = false;
                 }
@@ -121,7 +126,7 @@ pub fn parse(code: String) -> Result<Vec<Token>, Box<dyn Error>> {
             if SYMBOLS.contains(&c) {
                 tokens.push(Token::Symbol(c));
             }
-        }
     }
     Ok(tokens)
 }
+
