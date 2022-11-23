@@ -1,29 +1,19 @@
 use crate::tokens::*;
 use std::error::Error;
-use regex::Regex;
 
-pub struct Tokenizer {
-
-}
-
-pub fn create_token(s: &str) -> Result<Token, Box<dyn Error>> {
-    if let Ok(n) = s.parse::<i16>() {
-        if n >= 0 {
-            return Ok(Token::IntConst(n))
-        }
-    }
-    Ok(Token::StringConst(String::from(s)))
+fn create_token<T>(data: T) -> Result<Token, Box<dyn Error>>
+where T: char + str {
+    let n = u16::try_from(data)
+    Ok(Token::IntConst(0))
 }
 
 pub fn parse(code: String) -> Result<Vec<Token>, Box<dyn Error>> {
     let mut in_string = false;
     let mut in_word = false;
-    let mut in_num = false;
     let mut in_comment = false;
     let mut multiline_comment = false;
     let mut str_start = 0;
     let mut word_start = 0;
-    let mut num_start = 0;
     let mut tokens = vec![];
     let mut chars = code.chars().enumerate().peekable();
     while let Some((i, c)) = chars.next() {
@@ -42,91 +32,63 @@ pub fn parse(code: String) -> Result<Vec<Token>, Box<dyn Error>> {
             }
         } else if in_string {
             if c == '"' {
-                tokens.push(Token::StringConst(code[str_start..i].to_string()));
+                tokens.push(create_token(&code[str_start..i])?);
                 in_string = false;
             }
         } else {
-
-        }
-        if c.is_numeric() {
-
-        }
-        match c {
-            '"' => {
-                if !in_string {
-                    (in_string, str_start) = (true, i + 1);
-                } else {
-                    
+            if c.is_numeric() && !in_word {
+                let start = i;
+                let mut end = start;
+                while let Some((j, _)) = chars.next_if(|(_, x)| x.is_numeric()) {
+                    end = j;
                 }
-            }
-            '/' => {
-                if !in_comment && !in_string {
-                    if let Some((_, '/')) | Some((_, '*')) = chars.peek() {
-                        in_comment = true;
-                        multiline_comment = chars.next().unwrap().1 == '*'; 
-                    } else {
-                        tokens.push(Token::Symbol('/'));
-                    }
-                }
-            }
-            '*' => {
-                if in_comment && multiline_comment {
-                    if let Some(_) = chars.next_if_eq(&(i + 1, '/')) {
-                        (in_comment, multiline_comment) = (false, false);
-                    }
-                } else {
-                    tokens.push(Token::Symbol('*'));
-                }
-            }
-            ' ' => {}
-            '\n' => {}
-            _ => {},
-        }
-    }
-    for (i, c) in chars {
-        if c == '"' {
-            if !in_string {
-                str_start = i + 1;
-                in_string = true;
+                tokens.push(create_token(&code[start..=end])?);
+            } else if c.is_alphabetic() && !in_word {
+                (in_word, word_start) = (true, i + 1);
             } else {
-                
-            }
-        } else if in_string {
-            continue;
-        } else if c == ' ' {
-            if in_word {
-                in_word = false;
-                let word = &code[word_start..i];
-                if let Some(k) = KEYWORDS.get(word) {
-                    tokens.push(Token::Keyword(*k));
+                match c {
+                    '"' => {
+                        if !in_string {
+                            (in_string, str_start) = (true, i + 1);
+                        }
+                    }
+                    '/' => {
+                        if !in_comment && !in_string {
+                            if let Some((_, '/')) | Some((_, '*')) = chars.peek() {
+                                in_comment = true;
+                                multiline_comment = chars.next().unwrap().1 == '*'; 
+                            } else {
+                                tokens.push(create_token('/')?);
+                            }
+                        }
+                    }
+                    '*' => {
+                        if in_comment && multiline_comment {
+                            if let Some(_) = chars.next_if_eq(&(i + 1, '/')) {
+                                (in_comment, multiline_comment) = (false, false);
+                            }
+                        } else {
+                            tokens.push(create_token(c)?);
+                        }
+                    }
+                    ' ' => {
+                        if in_word {
+                            in_word = false;
+                            let word = &code[word_start..i];
+                            if let Some(k) = KEYWORDS.get(word) {
+                                tokens.push(Token::Keyword(*k));
+                            }
+                        }
+                    }
+                    '\n' => {}
+                    _ => {
+                        if SYMBOLS.contains(&c) {
+                            tokens.push(Token::Symbol(c));
+                        }
+                    },
                 }
             }
-            if in_num {
-                in_num = false;
-                let n = (&code[num_start..i]).parse::<i16>()?;
-                tokens.push(Token::IntConst(n));
-                
-            }
-        } else if c == '\n' {
-                if in_comment && !multiline_comment {
-                    in_comment = false;
-                }
-            }
-            if c.is_alphabetic() {
-                if !in_word {
-                    in_word = true;
-                    word_start = i;
-                }
-            } else if c.is_numeric() {
-                if !in_word && !in_num {
-                    in_num = true;
-                    num_start = i;
-                }
-            }
-            if SYMBOLS.contains(&c) {
-                tokens.push(Token::Symbol(c));
-            }
+        }
     }
     Ok(tokens)
 }
-
