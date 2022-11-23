@@ -2,7 +2,11 @@ use crate::tokens::*;
 use std::error::Error;
 use regex::Regex;
 
-pub fn create_token(s: &str) -> Token {
+pub struct Tokenizer {
+
+}
+
+pub fn create_token(s: &str) -> Result<Token, Box<dyn Error>> {
     if let Ok(n) = s.parse::<i16>() {
         if n >= 0 {
             return Token::IntConst(n)
@@ -12,10 +16,6 @@ pub fn create_token(s: &str) -> Token {
 }
 
 pub fn parse(code: String) -> Result<Vec<Token>, Box<dyn Error>> {
-    //let whitespace_and_comments = Regex::new(r"(?m)\s+|\s*(//.*)*\s+").expect("bad regex");
-    //let trimmed_code = whitespace_and_comments.replace_all(&code, " ").trim().to_string();
-    //println!("{trimmed_code}");
-    //let int_rx = Regex::new(r"[0-9]+");
     let mut in_string = false;
     let mut in_word = false;
     let mut in_num = false;
@@ -27,7 +27,41 @@ pub fn parse(code: String) -> Result<Vec<Token>, Box<dyn Error>> {
     let mut tokens = vec![];
     let mut chars = code.chars().enumerate().peekable();
     while let Some((i, c)) = chars.next() {
-        
+        match c {
+            '"' => {
+                if !in_string {
+                    (in_string, str_start) = (true, i + 1);
+                } else {
+                    tokens.push(Token::StringConst(code[str_start..i].to_string()));
+                    in_string = false;
+                }
+            }
+            '/' => {
+                if !in_comment {
+                    if let Some((_, '/')) = chars.peek() {
+                        (in_comment, multiline_comment) = (true, false);
+                    }
+                    if let Some((_, '*')) = chars.peek() {
+                        (in_comment, multiline_comment) = (true, true);
+                    }
+                    else {
+                        tokens.push(Token::Symbol('/'));
+                    }
+                }
+            }
+            '*' => {
+                if in_comment && multiline_comment {
+                    if let Some(_) = chars.next_if_eq(&(i + 1, '/')) {
+                        (in_comment, multiline_comment) = (false, false);
+                    }
+                } else {
+                    tokens.push(Token::Symbol('*'));
+                }
+            }
+            '_' => {}
+            '\n' => {}
+            _ => {},
+        }
     }
     for (i, c) in chars {
         if c == '"' {
@@ -35,8 +69,7 @@ pub fn parse(code: String) -> Result<Vec<Token>, Box<dyn Error>> {
                 str_start = i + 1;
                 in_string = true;
             } else {
-                tokens.push(Token::StringConst(code[str_start..i].to_string()));
-                in_string = false;
+                
             }
         } else if in_string {
             continue;
@@ -57,8 +90,9 @@ pub fn parse(code: String) -> Result<Vec<Token>, Box<dyn Error>> {
         } else {
             if c == '/' {
                 if !in_comment {
-                    if let Some((_,'/')) = chars.peek() {
+                    if &code[i..=i+1] == "//" {
                         in_comment = true;
+                        multiline_comment = false;
                     } else if &code[i..=i+1] == "/*" {
                         in_comment = true;
                         multiline_comment = true;
