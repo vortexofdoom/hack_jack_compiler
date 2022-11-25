@@ -77,7 +77,9 @@ pub fn parse(code: String) -> Result<Vec<Token>, TokenizerError> {
                     tokens.push(Token::Symbol(c));
                 }
             } else {
-                return Err(TokenizerError::UnrecognizedToken);
+                if !c.is_whitespace() {
+                    return Err(TokenizerError::UnrecognizedToken);
+                }
             }
         }
     }

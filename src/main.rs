@@ -30,7 +30,6 @@ fn main() {
             .to_str()
             .unwrap();
         if let Ok(code) = fs::read_to_string(file) {
-            println!("hi");
             let tokens = tokenizer::parse(code).expect("tokenizer error");
             let output = File::create(Path::new(filename).with_extension("xml"))
                 .expect("failed to create file");
