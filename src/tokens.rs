@@ -37,7 +37,7 @@ pub enum Keyword {
 
 impl Display for Keyword {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        let txt = match self {
+        let kw = match self {
             Class => "class",
             Constructor => "constructor",
             Function => "function",
@@ -60,7 +60,7 @@ impl Display for Keyword {
             While => "while",
             Return => "return",
         };
-        write!(f, "{txt}")
+        write!(f, "{kw}")
     }
 }
 
@@ -68,7 +68,15 @@ impl Display for Token {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             Token::Keyword(k) => write!(f, "<keyword>{k}</keyword>"),
-            Token::Symbol(c) => write!(f, "<symbol>{c}</symbol>"),
+            Token::Symbol(c) => {
+                match c {
+                    '<' => write!(f, "<symbol>&lt;</symbol>"),
+                    '>' => write!(f, "<symbol>&gt;</symbol>"),
+                    '"' => write!(f, "<symbol>&quot;</symbol>"),
+                    '&' => write!(f, "<symbol>&amp;</symbol>"),
+                    _ => write!(f, "<symbol>{c}</symbol>"),
+                }
+            },
             Token::Identifier(s) => write!(f, "<identifier>{s}</identifier>"),
             Token::IntConst(i) => write!(f, "<integerConstant>{i}</integerConstant>"),
             Token::StringConst(s) => write!(f, "<stringConstant>{s}</stringConstant>"),

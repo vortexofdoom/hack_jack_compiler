@@ -1,5 +1,6 @@
 use crate::tokens::*;
 
+#[derive(Debug)]
 pub enum TokenizerError {
     InvalidInt,
     UnrecognizedToken,

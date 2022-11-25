@@ -1,5 +1,6 @@
+use std::io::{BufWriter, Write};
 use std::path::{PathBuf, Path};
-use std::fs;
+use std::fs::{self, File};
 
 #[macro_use]
 extern crate lazy_static;
@@ -11,11 +12,6 @@ fn main() {
     let args: Vec<String> = std::env::args().collect();
     let mut files: Vec<PathBuf> = vec![];
     let file_path = Path::new(&args[1]);
-    let filename = file_path
-        .file_stem()
-        .unwrap()
-        .to_str()
-        .unwrap();
     if file_path.is_dir() {
         for entry in file_path.read_dir().unwrap() {
             if let Some(x) = entry.as_ref().unwrap().path().extension() {
@@ -28,8 +24,21 @@ fn main() {
         files.push(file_path.to_path_buf())
     }
     for file in files {
+        let filename = file_path
+            .file_stem()
+            .unwrap()
+            .to_str()
+            .unwrap();
         if let Ok(code) = fs::read_to_string(file) {
-            let tokens = tokenizer::parse(code);
+            println!("hi");
+            let tokens = tokenizer::parse(code).expect("tokenizer error");
+            let output = File::create(Path::new(filename).with_extension("xml"))
+                .expect("failed to create file");
+            let mut writer = BufWriter::new(output);
+            for t in tokens.iter() {
+                write!(writer, "{t}").expect("failed to write to file");
+            }
+            writer.flush().unwrap();
         }
     }
 }
