@@ -1,12 +1,13 @@
-use std::io::{BufWriter, Write};
-use std::path::{PathBuf, Path};
 use std::fs::{self, File};
+use std::io::{BufWriter, Write};
+use std::path::{Path, PathBuf};
 
 #[macro_use]
 extern crate lazy_static;
 
-mod tokens;
 mod tokenizer;
+mod tokens;
+mod compilation_engine;
 
 fn main() {
     let args: Vec<String> = std::env::args().collect();
@@ -24,11 +25,7 @@ fn main() {
         files.push(file_path.to_path_buf())
     }
     for file in files {
-        let filename = file_path
-            .file_stem()
-            .unwrap()
-            .to_str()
-            .unwrap();
+        let filename = file_path.file_stem().unwrap().to_str().unwrap();
         if let Ok(code) = fs::read_to_string(file) {
             let tokens = tokenizer::parse(code).expect("tokenizer error");
             let output = File::create(Path::new(filename).with_extension("xml"))

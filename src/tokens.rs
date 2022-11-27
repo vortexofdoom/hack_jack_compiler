@@ -1,4 +1,7 @@
-use std::{collections::{HashSet, HashMap}, fmt::Display};
+use std::{
+    collections::{HashMap, HashSet},
+    fmt::Display,
+};
 use Keyword::*;
 
 #[derive(Clone)]
@@ -68,14 +71,12 @@ impl Display for Token {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             Token::Keyword(k) => write!(f, "<keyword>{k}</keyword>"),
-            Token::Symbol(c) => {
-                match c {
-                    '<' => write!(f, "<symbol>&lt;</symbol>"),
-                    '>' => write!(f, "<symbol>&gt;</symbol>"),
-                    '"' => write!(f, "<symbol>&quot;</symbol>"),
-                    '&' => write!(f, "<symbol>&amp;</symbol>"),
-                    _ => write!(f, "<symbol>{c}</symbol>"),
-                }
+            Token::Symbol(c) => match c {
+                '<' => write!(f, "<symbol>&lt;</symbol>"),
+                '>' => write!(f, "<symbol>&gt;</symbol>"),
+                '"' => write!(f, "<symbol>&quot;</symbol>"),
+                '&' => write!(f, "<symbol>&amp;</symbol>"),
+                _ => write!(f, "<symbol>{c}</symbol>"),
             },
             Token::Identifier(s) => write!(f, "<identifier>{s}</identifier>"),
             Token::IntConst(i) => write!(f, "<integerConstant>{i}</integerConstant>"),
