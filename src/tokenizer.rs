@@ -12,7 +12,7 @@ impl From<std::num::ParseIntError> for TokenizerError {
     }
 }
 
-pub fn parse(code: String) -> Result<Vec<Token>, TokenizerError> {
+pub fn tokenize(code: String) -> Result<Vec<Token>, TokenizerError> {
     let mut in_string = false;
     let mut in_comment = false;
     let mut multiline_comment = false;
@@ -24,11 +24,11 @@ pub fn parse(code: String) -> Result<Vec<Token>, TokenizerError> {
             if multiline_comment {
                 if c == '*' {
                     if let Some((_, '/')) = chars.next() {
-                        (in_comment, multiline_comment) = (false, false);
+                        in_comment = false;
                     }
                 }
             } else if c == '\n' {
-                    in_comment = false;
+                in_comment = false;
             }
         } else if in_string {
             if c == '"' {
@@ -43,10 +43,10 @@ pub fn parse(code: String) -> Result<Vec<Token>, TokenizerError> {
             }
             let n = code[start..=end].parse::<i16>()?;
             tokens.push(Token::IntConst(n));
-        } else if c.is_alphabetic() {
+        } else if c.is_alphabetic() || c == '_' {
             let start = i;
             let mut end = start;
-            while let Some((j, _)) = chars.next_if(|(_, x)| x.is_alphanumeric()) {
+            while let Some((j, _)) = chars.next_if(|(_, x)| x.is_alphanumeric() || *x == '_') {
                 end = j;
             }
             let word = &code[start..=end];
@@ -58,9 +58,9 @@ pub fn parse(code: String) -> Result<Vec<Token>, TokenizerError> {
         } else if SYMBOLS.contains(&c) {
             if c == '/' {
                 if !in_comment && !in_string {
-                    if let Some((_, '/')) | Some((_, '*')) = chars.peek() {
+                    if let Some((_, comment_start)) = chars.next_if(|(_, x)| *x == '/' || *x == '*') {
                         in_comment = true;
-                        multiline_comment = chars.next().unwrap().1 == '*';
+                        multiline_comment = comment_start == '*';
                     } else {
                         tokens.push(Token::Symbol('/'));
                     }

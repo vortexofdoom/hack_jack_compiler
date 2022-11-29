@@ -1,6 +1,7 @@
-use std::fs::{self, File};
-use std::io::{BufWriter, Write};
+use std::fs;
 use std::path::{Path, PathBuf};
+
+use compilation_engine::CompilationEngine;
 
 #[macro_use]
 extern crate lazy_static;
@@ -25,16 +26,10 @@ fn main() {
         files.push(file_path.to_path_buf())
     }
     for file in files {
-        let filename = file_path.file_stem().unwrap().to_str().unwrap();
-        if let Ok(code) = fs::read_to_string(file) {
-            let tokens = tokenizer::parse(code).expect("tokenizer error");
-            let output = File::create(Path::new(filename).with_extension("xml"))
-                .expect("failed to create file");
-            let mut writer = BufWriter::new(output);
-            for t in tokens.iter() {
-                write!(writer, "{t}").expect("failed to write to file");
-            }
-            writer.flush().unwrap();
+        if let Ok(code) = fs::read_to_string(&file) {
+            let filename = file.as_path().file_stem().unwrap().to_str().unwrap();
+            let tokens = tokenizer::tokenize(code).expect("tokenizer error");
+            CompilationEngine::compile(filename, &tokens);
         }
     }
 }
