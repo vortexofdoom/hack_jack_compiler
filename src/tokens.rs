@@ -4,7 +4,7 @@ use std::{
 };
 use Keyword::*;
 
-#[derive(Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Token {
     Keyword(Keyword),
     Symbol(char),
@@ -13,74 +13,7 @@ pub enum Token {
     StringConst(String),
 }
 
-impl Token {
-    pub fn is_valid(&self, token_type: TokenType) -> bool {
-        match (self, token_type) {
-            (Token::Keyword(Field), TokenType::ClassVar)
-            | (Token::Keyword(Static), TokenType::ClassVar) => true,
-
-            (Token::Symbol('+'), TokenType::Op)
-            | (Token::Symbol('-'), TokenType::Op)
-            | (Token::Symbol('*'), TokenType::Op)
-            | (Token::Symbol('/'), TokenType::Op)
-            | (Token::Symbol('&'), TokenType::Op)
-            | (Token::Symbol('|'), TokenType::Op)
-            | (Token::Symbol('<'), TokenType::Op)
-            | (Token::Symbol('>'), TokenType::Op)
-            | (Token::Symbol('='), TokenType::Op)  => true,
-
-            (Token::Symbol('-'), TokenType::UnaryOp)
-            | (Token::Symbol('~'), TokenType::UnaryOp) => true,
-
-            (Token::Keyword(True), TokenType::Constant)
-            | (Token::Keyword(False), TokenType::Constant)
-            | (Token::Keyword(Null), TokenType::Constant)
-            | (Token::Keyword(This), TokenType::Constant)
-            | (Token::StringConst(_), TokenType::Constant)
-            | (Token::IntConst(_), TokenType::Constant) => true,
-
-            (Token::Keyword(Let), TokenType::Statement)
-            | (Token::Keyword(While), TokenType::Statement)
-            | (Token::Keyword(Do), TokenType::Statement)
-            | (Token::Keyword(If), TokenType::Statement)
-            | (Token::Keyword(Return), TokenType::Statement) => true,
-
-            (Token::Keyword(Int), TokenType::Type)
-            | (Token::Keyword(Char), TokenType::Type)
-            | (Token::Keyword(Boolean), TokenType::Type)
-            | (Token::Identifier(_), TokenType::Type) => true,
-
-            (Token::Keyword(Constructor), TokenType::Subroutine)
-            | (Token::Keyword(Function), TokenType::Subroutine)
-            | (Token::Keyword(Method), TokenType::Subroutine) => true,
-
-            (Token::Identifier(_), TokenType::VarName) 
-            | (Token::Identifier(_), TokenType::ClassName)
-            | (Token::Identifier(_), TokenType::SubroutineName) => true,
-
-            _ => false,
-        }
-    }
-}
-
-#[derive(Clone, Copy, PartialEq)]
-pub enum TokenType {
-    ClassName,
-    ClassVar,
-    Constant,
-    Statement,
-    Subroutine,
-    SubroutineName,
-    Term,
-    Type,
-    Var,
-    VarName,
-    Op,
-    UnaryOp,
-    Other,
-}
-
-#[derive(Clone, Copy, PartialEq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Keyword {
     Class,
     Constructor,
@@ -199,6 +132,7 @@ lazy_static! {
         hs.insert('>');
         hs.insert('=');
         hs.insert('~');
+        hs.insert('"');
         hs
     };
 }

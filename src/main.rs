@@ -1,14 +1,15 @@
-use std::fs;
-use std::path::{Path, PathBuf};
-
 use compilation_engine::CompilationEngine;
+use std::path::{Path, PathBuf};
+use tokenizer::Tokenizer;
 
 #[macro_use]
 extern crate lazy_static;
 
+mod compilation_engine;
+mod names;
 mod tokenizer;
 mod tokens;
-mod compilation_engine;
+mod validation;
 
 fn main() {
     let args: Vec<String> = std::env::args().collect();
@@ -26,10 +27,8 @@ fn main() {
         files.push(file_path.to_path_buf())
     }
     for file in files {
-        if let Ok(code) = fs::read_to_string(&file) {
-            let filename = file.as_path().file_stem().unwrap().to_str().unwrap();
-            let tokens = tokenizer::tokenize(code).expect("tokenizer error");
-            CompilationEngine::compile(filename, &tokens);
-        }
+        let tknzr = Tokenizer::new(&file);
+        let filename = file.as_path().file_stem().unwrap().to_str().unwrap();
+        let _engine = CompilationEngine::compile(filename, tknzr).map_err(|_| {});
     }
 }

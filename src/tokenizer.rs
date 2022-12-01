@@ -1,9 +1,11 @@
 use crate::tokens::*;
+use std::{collections::VecDeque, fs, path::Path};
 
 #[derive(Debug)]
 pub enum TokenizerError {
     InvalidInt,
     UnrecognizedToken,
+    EndOfFile,
 }
 
 impl From<std::num::ParseIntError> for TokenizerError {
@@ -11,70 +13,200 @@ impl From<std::num::ParseIntError> for TokenizerError {
         TokenizerError::InvalidInt
     }
 }
+#[derive(Debug, Clone)]
+pub struct Tokenizer {
+    chars: VecDeque<char>,
+    next: Option<Token>,
+}
 
-pub fn tokenize(code: String) -> Result<Vec<Token>, TokenizerError> {
-    let mut in_string = false;
-    let mut in_comment = false;
-    let mut multiline_comment = false;
-    let mut str_start = 0;
-    let mut tokens = vec![];
-    let mut chars = code.chars().enumerate().peekable();
-    while let Some((i, c)) = chars.next() {
-        if in_comment {
-            if multiline_comment {
-                if c == '*' {
-                    if let Some((_, '/')) = chars.next() {
-                        in_comment = false;
+impl Tokenizer {
+    pub fn new<P: AsRef<Path>>(file: P) -> Self {
+        let mut tknzr = Tokenizer {
+            chars: fs::read_to_string(file)
+                .expect("failed to read file")
+                .trim()
+                .chars()
+                .collect(),
+            next: None,
+        };
+        if let Ok(t) = tknzr.get_token() {
+            tknzr.next = Some(t);
+        }
+        tknzr
+    }
+
+    pub fn next(&mut self) -> Option<Token> {
+        let mut token;
+        if let Ok(t) = self.get_token() {
+            token = Some(t);
+            if let Some(_) = &self.next {
+                std::mem::swap(&mut self.next, &mut token);
+            }
+        } else {
+            token = None;
+        }
+        token
+    }
+
+    pub fn peek(&self) -> &Option<Token> {
+        &self.next
+    }
+
+    fn is_comment(&mut self) -> bool {
+        match self.chars.get(0) {
+            Some('*') => {
+                while let Some(c) = self.chars.pop_front() {
+                    if c == '*' && self.chars.get(0) == Some(&'/') {
+                        self.chars.pop_front();
+                        break;
                     }
                 }
-            } else if c == '\n' {
-                in_comment = false;
+                true
             }
-        } else if in_string {
-            if c == '"' {
-                tokens.push(Token::StringConst(String::from(&code[str_start..i])));
-                in_string = false;
-            }
-        } else if c.is_numeric() {
-            let start = i;
-            let mut end = start;
-            while let Some((j, _)) = chars.next_if(|(_, x)| x.is_numeric()) {
-                end = j;
-            }
-            let n = code[start..=end].parse::<i16>()?;
-            tokens.push(Token::IntConst(n));
-        } else if c.is_alphabetic() || c == '_' {
-            let start = i;
-            let mut end = start;
-            while let Some((j, _)) = chars.next_if(|(_, x)| x.is_alphanumeric() || *x == '_') {
-                end = j;
-            }
-            let word = &code[start..=end];
-            if let Some(k) = KEYWORDS.get(word) {
-                tokens.push(Token::Keyword(*k));
-            } else {
-                tokens.push(Token::Identifier(String::from(word)));
-            }
-        } else if SYMBOLS.contains(&c) {
-            if c == '/' {
-                if !in_comment && !in_string {
-                    if let Some((_, comment_start)) = chars.next_if(|(_, x)| *x == '/' || *x == '*') {
-                        in_comment = true;
-                        multiline_comment = comment_start == '*';
-                    } else {
-                        tokens.push(Token::Symbol('/'));
+            Some('/') => {
+                while let Some(c) = self.chars.pop_front() {
+                    if c == '\n' {
+                        break;
                     }
                 }
-            } else if c == '"' {
-                if !in_string {
-                    (in_string, str_start) = (true, i + 1);
-                }
-            } else {
-                tokens.push(Token::Symbol(c));
+                true
             }
-        } else if !c.is_whitespace() {
-                return Err(TokenizerError::UnrecognizedToken);
+            _ => false,
         }
     }
-    Ok(tokens)
+
+    fn handle_string(&mut self) -> Token {
+        let mut chars = self.chars.iter().enumerate();
+        let mut end = self.chars.len();
+        while let Some((i, &c)) = chars.next() {
+            if c == '"' {
+                end = i;
+                break;
+            }
+        }
+        Token::StringConst(self.chars.drain(..end).collect())
+    }
+
+    pub fn get_token(&mut self) -> Result<Token, TokenizerError> {
+        if let Some(c) = self.chars.pop_front() {
+            if SYMBOLS.contains(&c) {
+                match c {
+                    '"' => Ok(self.handle_string()),
+                    '/' => {
+                        if self.is_comment() {
+                            self.get_token()
+                        } else {
+                            Ok(Token::Symbol('/'))
+                        }
+                    }
+                    _ => Ok(Token::Symbol(c)),
+                }
+            } else if c.is_numeric() {
+                let mut num = String::from(c);
+                let mut chars = self.chars.iter().enumerate();
+                let mut end = self.chars.len();
+                while let Some((i, &c)) = chars.next() {
+                    if !c.is_numeric() {
+                        end = i;
+                        break;
+                    }
+                }
+                num.extend(self.chars.drain(..end));
+                Ok(Token::IntConst(num.parse::<i16>()?))
+            } else if c.is_alphabetic() || c == '_' {
+                let mut word = String::from(c);
+                let mut chars = self.chars.iter().enumerate();
+                let mut end = self.chars.len();
+                while let Some((i, &c)) = chars.next() {
+                    if !(c.is_alphanumeric() || c == '_') {
+                        end = i;
+                        break;
+                    }
+                }
+                word.extend(self.chars.drain(..end));
+                if let Some(&k) = KEYWORDS.get(&word.as_str()) {
+                    Ok(Token::Keyword(k))
+                } else {
+                    Ok(Token::Identifier(word))
+                }
+            } else if !c.is_whitespace() {
+                Err(TokenizerError::UnrecognizedToken)
+            } else {
+                self.get_token()
+            }
+        } else {
+            Err(TokenizerError::EndOfFile)
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{Keyword::*, *};
+    #[test]
+    fn test_keyword() {
+        let mut tknzr = Tokenizer {
+            chars: "class".chars().collect(),
+            next: None,
+        };
+        assert_eq!(Some(Token::Keyword(Class)), tknzr.next());
+    }
+
+    #[test]
+    fn test_symbol() {
+        let mut tknzr = Tokenizer {
+            chars: VecDeque::from(vec!['(']),
+            next: None,
+        };
+        assert_eq!(Some(Token::Symbol('(')), tknzr.next());
+    }
+
+    #[test]
+    fn test_int() {
+        let mut tknzr = Tokenizer {
+            chars: "12364".chars().collect(),
+            next: None,
+        };
+        assert_eq!(Some(Token::IntConst(12364)), tknzr.next());
+    }
+
+    #[test]
+    fn test_identifier() {
+        let s = "_helf12_3rd";
+        let mut tknzr = Tokenizer {
+            chars: s.chars().collect(),
+            next: None,
+        };
+        assert_eq!(Some(Token::Identifier(String::from(s))), tknzr.next());
+    }
+
+    #[test]
+    fn test_string() {
+        let mut tknzr = Tokenizer {
+            chars: "\"12364\"".chars().collect(),
+            next: None,
+        };
+        assert_eq!(
+            Some(Token::StringConst(String::from("12364"))),
+            tknzr.next()
+        );
+    }
+
+    #[test]
+    fn test_single_line_comment() {
+        let mut tknzr = Tokenizer {
+            chars: "//Hello this is a comment\nvoid".chars().collect(),
+            next: None,
+        };
+        assert_eq!(Some(Token::Keyword(Void)), tknzr.next());
+    }
+
+    #[test]
+    fn test_multi_line_comment() {
+        let mut tknzr = Tokenizer {
+            chars: "/**Hello this is a comment\n\n\n**/let".chars().collect(),
+            next: None,
+        };
+        assert_eq!(Some(Token::Keyword(Let)), tknzr.next());
+    }
 }
