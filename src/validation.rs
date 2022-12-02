@@ -1,146 +1,123 @@
-// Huge mess of TryFrom and other validation
+use std::fmt::{Display, Debug};
 
 use crate::{
-    names::*,
-    tokens::{
-        Keyword::{self, *},
-        Token,
-    },
+    tokens::{Keyword::{self, *}, TokenWrapper, Identifier}, names::{Names, NameSet},
 };
 
-impl TryFrom<Box<Token>> for Keyword {
-    type Error = Box<Token>;
-    fn try_from(value: Box<Token>) -> Result<Self, Self::Error> {
-        match *value {
-            Token::Keyword(k) => Ok(k),
-            _ => Err(value),
-        }
-    }
-}
-impl TryFrom<Box<Token>> for char {
-    type Error = Box<Token>;
-    fn try_from(value: Box<Token>) -> Result<Self, Self::Error> {
-        match *value {
-            Token::Symbol(c) => Ok(c),
-            _ => Err(value),
-        }
-    }
-}
-
-#[derive(Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum TokenType {
     ClassVarDec,
     Constant,
-    Name(NameSet),
+    Name(Names),
     BinaryOp,
     UnaryOp,
     Statement,
     SubroutineDec,
     Type,
+    ReturnType,
 }
 
-pub trait ValidToken {
-    fn is_valid_token_type(&self, token_type: TokenType) -> bool {
-        (*self).is_valid_token_type(token_type)
-    }
-}
-
-impl ValidToken for TokenType {
-    fn is_valid_token_type(&self, token_type: TokenType) -> bool {
-        matches!(self, token_type)
-    }
-}
-
-impl ValidToken for char {
-    fn is_valid_token_type(&self, token_type: TokenType) -> bool {
-        match token_type {
-            TokenType::UnaryOp => matches!(self, '-' | '~'),
-            TokenType::BinaryOp => {
-                matches!(self, '+' | '-' | '*' | '/' | '&' | '|' | '<' | '>' | '=')
-            }
+impl PartialEq<TokenWrapper> for TokenType {
+    fn eq(&self, other: &TokenWrapper) -> bool {
+        match (self, other) {
+            (Self::UnaryOp, TokenWrapper::Symbol(c)) => matches!(c, '-'|'~'),
+            (Self::BinaryOp, TokenWrapper::Symbol(c)) => matches!(c, '+' | '-' | '*' | '/' | '&' | '|' | '<' | '>' | '='),
+            (Self::Constant, _) => true,
             _ => false,
         }
     }
 }
+pub trait Token: Display + Debug + PartialEq<TokenType> {
+    fn as_token(&self) -> Box<dyn Token>;
+}
+impl Display for TokenType {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "")
+    }
+}
+impl Token for TokenType {
+    fn as_token(&self) -> Box<dyn Token> {
+        Box::new(*self)
+    }
+}
 
-impl ValidToken for Keyword {
-    fn is_valid_token_type(&self, token_type: TokenType) -> bool {
-        match token_type {
+impl Token for i16 {
+    fn as_token(&self) -> Box<dyn Token> {
+        Box::new(Into::<TokenWrapper>::into(*self))
+    }
+}
+impl PartialEq<TokenType> for i16 {
+    fn eq(&self, other: &TokenType) -> bool {
+        other == &TokenType::Constant
+    }
+}
+
+
+impl Token for char {
+    fn as_token(&self) -> Box<dyn Token> {
+        Box::new(Into::<TokenWrapper>::into(*self))
+    }
+}
+impl PartialEq<TokenType> for char {
+    fn eq(&self, other: &TokenType) -> bool {
+        match other {
+            TokenType::BinaryOp => matches!(self, '+' | '-' | '*' | '/' | '&' | '|' | '<' | '>' | '='),
+            TokenType::UnaryOp => matches!(self, '-' | '~'),
+            _ => false,
+        }
+    }
+}
+impl Token for Keyword {
+    fn as_token(&self) -> Box<dyn Token> {
+        Box::new(*self)
+    }
+}
+impl PartialEq<TokenType> for Keyword {
+    fn eq(&self, other: &TokenType) -> bool {
+        match other {
             TokenType::Constant => matches!(self, True | False | This | Null),
             TokenType::ClassVarDec => matches!(self, Static | Field),
             TokenType::Statement => matches!(self, Let | If | While | Do | Return),
             TokenType::SubroutineDec => matches!(self, Constructor | Function | Method),
             TokenType::Type => matches!(self, Int | Char | Boolean),
+            TokenType::ReturnType => matches!(self, Void | Int | Char |Boolean),
             _ => false,
         }
     }
 }
 
-impl TryFrom<Keyword> for TokenType {
-    type Error = Keyword;
-
-    fn try_from(value: Keyword) -> Result<Self, Self::Error> {
-        match value {
-            True    => Ok(Self::Constant),
-            False   => Ok(Self::Constant),
-            This    => Ok(Self::Constant),
-            Null    => Ok(Self::Constant),
-
-            Static  => Ok(Self::ClassVarDec),
-            Field   => Ok(Self::ClassVarDec),
-
-            Constructor => Ok(Self::SubroutineDec),
-            Function    => Ok(Self::SubroutineDec),
-            Method      => Ok(Self::SubroutineDec),
-
-            Int     => Ok(Self::Type),
-            Char    => Ok(Self::Type),
-            Boolean => Ok(Self::Type),
-
-            Let => Ok(Self::Statement),
-            If => Ok(Self::Statement),
-            While => Ok(Self::Statement),
-            Do => Ok(Self::Statement),
-            Return => Ok(Self::Statement),
-            _ => Err(value)
+impl Token for TokenWrapper {
+    fn as_token(&self) -> Box<dyn Token> {
+        Box::new(*self)
+    }
+}
+impl PartialEq<TokenType> for TokenWrapper {
+    fn eq(&self, other: &TokenType) -> bool {
+        match (self, other) {
+            (Self::Symbol(c), _) => c == other,
+            (_, TokenType::Constant) => true,
         }
     }
 }
 
-impl TryFrom<char> for TokenType {
-    type Error = char;
-
-    fn try_from(value: char) -> Result<Self, Self::Error> {
-        match value {
-            '+' | '-' | '*' | '/' | '&' | '|' | '<' | '>' | '=' => Ok(Self::BinaryOp),
-            '~' => Ok(Self::UnaryOp),
-            _ => Err(value),
-        }
+impl Token for String {
+    fn as_token(&self) -> Box<dyn Token> {
+        Box::new(Into::<TokenWrapper>::into(*self))
+    }
+}
+impl PartialEq<TokenType> for String {
+    fn eq(&self, other: &TokenType) -> bool {
+        other == &TokenType::Constant
     }
 }
 
-impl From<Keyword> for Token {
-    fn from(k: Keyword) -> Self {
-        Self::Keyword(k)
+impl Token for Identifier {
+    fn as_token(&self) -> Box<dyn Token> {
+        Box::new(*self)
     }
 }
-
-impl From<char> for Token {
-    fn from(c: char) -> Self {
-        Self::Symbol(c)
-    }
-}
-
-impl TryFrom<Box<Token>> for TokenType {
-    type Error = Box<Token>;
-
-    fn try_from(value: Box<Token>) -> Result<Self, Self::Error> {
-        match *value {
-            Token::Keyword(k) => Ok(Self::try_from(k).map_err(|_| value)?),
-            Token::Symbol(c) => Ok(Self::try_from(c).map_err(|_| value)?),
-            Token::IntConst(_) => Ok(Self::Constant),
-            Token::StringConst(_) => Ok(Self::Constant),
-            _ => Err(value)
-        }
+impl PartialEq<TokenType> for Identifier {
+    fn eq(&self, other: &TokenType) -> bool {
+        matches!(other, TokenType::Name(_))
     }
 }

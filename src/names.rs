@@ -1,15 +1,17 @@
 use std::collections::HashSet;
 
-pub struct Names {
+use crate::validation::{Token, TokenType};
+
+pub struct NameSet {
     classes: HashSet<String>,
     class_vars: HashSet<String>,
     subroutines: HashSet<String>,
     vars: HashSet<String>,
 }
 
-impl Names {
+impl NameSet {
     pub fn new() -> Self {
-        Names {
+        NameSet {
             classes: HashSet::new(),
             class_vars: HashSet::new(),
             subroutines: HashSet::new(),
@@ -17,18 +19,18 @@ impl Names {
         }
     }
 
-    pub fn get(&mut self, set: NameSet) -> &mut HashSet<String> {
+    pub fn get(&mut self, set: Names) -> &mut HashSet<String> {
         match set {
-            NameSet::Classes => &mut self.classes,
-            NameSet::ClassVars => &mut self.class_vars,
-            NameSet::Subroutines => &mut self.subroutines,
-            NameSet::Vars => &mut self.vars,
+            Names::Classes => &mut self.classes,
+            Names::ClassVars => &mut self.class_vars,
+            Names::Subroutines => &mut self.subroutines,
+            Names::Vars => &mut self.vars,
         }
     }
 }
 
-#[derive(Clone, Copy, PartialEq, Eq)]
-pub enum NameSet {
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Names {
     Classes,
     ClassVars,
     Subroutines,
