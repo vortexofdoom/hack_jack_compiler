@@ -2,9 +2,11 @@ use crate::{
     names::*,
     tokenizer::Tokenizer,
     tokens::{
-        Keyword::{self, *}, Identifier, TokenWrapper, Token,
+        Identifier,
+        Keyword::{self, *},
+        Token, TokenWrapper, ValidToken,
     },
-    validation::{TokenType, Token},
+    validation::TokenType,
 };
 use std::{
     fs::File,
@@ -15,7 +17,7 @@ use std::{
 pub struct CompilationEngine {
     writer: BufWriter<File>,
     tokenizer: Tokenizer,
-    curr_token: Box<dyn Token>,
+    curr_token: Token,
     errors: Vec<CompilationError>,
     names: NameSet,
 }
@@ -49,29 +51,24 @@ impl CompilationEngine {
         }
     }
 
-    fn consume<T: Token>(&mut self, requested: T) {
-        if self.curr_token == requested {
-
-        }
-        let valid = match (, token.get_token_type()) {
-            (Some(t1), Some(t2)) => matches!(t1, t2),
-            (Some(t), None) => token.is_valid_token_type(t),
-            (None, Some(t)) => self.curr_token.is_valid_token_type(t),
-            (None, None) => false,
-        };
-        if valid {
+    fn consume<T: ValidToken + PartialEq<Token>>(&mut self, requested: T) {
+        if requested == self.curr_token {
             writeln!(self.writer, "{}", self.curr_token).expect("failed to write token");
             if let Some(t) = self.tokenizer.next() {
                 self.curr_token = t;
+            } else {
+                self.errors.push(CompilationError::UnexpectedToken);
             }
+        } else {
+            self.errors.push(CompilationError::UnexpectedToken);
         }
     }
 
     fn check_for_duplicate(&mut self, set: Names) {
         let name_set = self.names.get(set);
-        if let Some(t) = self.tokenizer.peek() {
-            if name_set.insert(s.to_owned()) {
-                self.consume(TokenType::Name(set));
+        if let Some(Identifier(s)) = self.curr_token.get_identifier() {
+            if name_set.insert(s.clone()) {
+                self.consume(TokenType::Name);
             } else {
                 self.errors.push(CompilationError::DuplicateIdentifier);
             }
@@ -83,43 +80,33 @@ impl CompilationEngine {
     fn construct_class(&mut self) {
         writeln!(self.writer, "<class>").expect("failed to start writing class");
         self.consume(Class);
-        self.check_for_duplicate(Name::Classes);
+        self.check_for_duplicate(Names::Classes);
         self.consume('{');
-        while let Some(Token::Keyword(k)) = self.tokenizer.peek() {
-            match k {
-                Static | Field => self.compile_class_var_dec(*k),
-                _ => self
-                    .errors
-                    .push(CompilationError::UnexpectedToken(Token::Keyword(*k))),
-            }
+        while self.curr_token == TokenType::ClassVarDec {
+            self.compile_class_var_dec();
         }
-        while let Some(Token::Keyword(k)) = self.tokenizer.peek() {
-            match k {
-                Constructor | Function | Method => self.compile_subroutine_dec(*k),
-                _ => self
-                    .errors
-                    .push(CompilationError::UnexpectedToken(Token::Keyword(*k))),
-            }
+        while self.curr_token == TokenType::SubroutineDec {
+            self.compile_subroutine_dec();
         }
         self.consume('}');
         writeln!(self.writer, "</class>").expect("failed to finish writing class");
     }
 
-    fn compile_class_var_dec(&mut self, keyword: Keyword) {
+    fn compile_class_var_dec(&mut self) {
         writeln!(self.writer, "<classVarDec>").expect("failed to start class var declaration");
-        self.consume(keyword);
+        self.consume(TokenType::ClassVarDec);
         self.consume(TokenType::Type);
-        self.check_for_duplicate(Name::ClassVars);
+        self.check_for_duplicate(Names::ClassVars);
         writeln!(self.writer, "</classVarDec>").expect("failed to finish class var declaration");
     }
 
-    fn compile_subroutine_dec(&mut self, keyword: Keyword) {
+    fn compile_subroutine_dec(&mut self) {
         writeln!(self.writer, "<classVarDec>").expect("failed to start class var declaration");
         self.consume(ClassVarDec);
         self.check_for_type();
-        self.check_for_duplicate(Name::Subroutines);
+        self.check_for_duplicate(Names::Subroutines);
         self.consume('(');
-        if self.tokenizer.peek() != &Some(Token::Symbol(')')) {
+        if self.curr_token != ')' {
             self.compile_parameter_list();
         }
         self.consume(')');
@@ -128,21 +115,21 @@ impl CompilationEngine {
     }
 
     fn compile_parameter_list(&mut self) {
-        self.names.get(Name::Vars).clear();
-        while self.tokenizer.peek() != &Some(Token::Symbol(')')) {
+        self.names.get(Names::Vars).clear();
+        while self.curr_token != ')' {
             self.check_for_type();
-            self.check_for_duplicate(Name::Vars);
-            if self.tokenizer.peek() == &Some(Token::Symbol(',')) {
+            self.check_for_duplicate(Names::Vars);
+            if self.curr_token == ',' {
                 self.consume(',');
             }
         }
     }
 
     fn compile_subroutine_body(&mut self) {
-        self.names.get(Name::Vars).clear();
+        self.names.get(Names::Vars).clear();
         writeln!(self.writer, "<subroutineBody>").expect("failed to start subroutine body");
         self.consume('{');
-        while self.tokenizer.peek() == &Some(Token::Keyword(Var)) {
+        while self.curr_token == Keyword::Var {
             self.compile_var_dec();
         }
         self.compile_statements();
@@ -154,9 +141,7 @@ impl CompilationEngine {
         writeln!(self.writer, "<varDec>").expect("failed to start var declaration");
         self.consume(Var);
         self.check_for_type();
-        if let Some(Identifier(_)) = self.tokenizer.peek() {
-            self.check_for_duplicate(Name::Vars);
-        }
+        if let Some(Identifier(s)) = self.curr_token.get_identifier() {}
         self.consume(';');
         writeln!(self.writer, "</varDec>").expect("failed to finish var declaration");
     }
@@ -164,17 +149,14 @@ impl CompilationEngine {
     //REFACTOR WITH NEW VALIDATION
     fn compile_statements(&mut self) {
         writeln!(self.writer, "<statements>").expect("failed to start statements");
-        while let &Some(t) = self.tokenizer.peek() {
-            match t {
-                Token::Keyword(Let) => self.compile_let(),
-                Token::Keyword(If) => self.compile_if(),
-                Token::Keyword(While) => self.compile_while(),
-                Token::Keyword(Do) => self.compile_do(),
-                Token::Keyword(Return) => self.compile_return(),
-                Token::Symbol('}') => break,
-                _ => self
-                    .errors
-                    .push(CompilationError::UnexpectedToken(t.clone())),
+        while self.curr_token == TokenType::Statement {
+            match self.curr_token.get_keyword() {
+                Some(Let) => self.compile_if(),
+                Some(If) => self.compile_if(),
+                Some(While) => self.compile_if(),
+                Some(Do) => self.compile_if(),
+                Some(Return) => self.compile_if(),
+                _ => break,
             }
         }
         writeln!(self.writer, "<statements>").expect("failed to finish statements");
@@ -183,17 +165,18 @@ impl CompilationEngine {
     fn compile_let(&mut self) {
         writeln!(self.writer, "<letStatement>").expect("failed to start let statement");
         self.consume(Let);
-        if let Some(t) = self.tokenizer.peek() {
-            let c = t.as_ref();
-            match c {
-                Identifier(s) => self.co
-                _ => 
-            }
-            if self.names.get(Name::Vars).contains(s) || self.names.get(Name::ClassVars).contains(s) {
-                self.consume(&Token::Identifier(s.clone()));
+        if let Some(Identifier(s)) = self.curr_token.get_identifier() {
+            if self.names.get(Names::Classes).contains(s)
+                || self.names.get(Names::Subroutines).contains(s)
+            {
+                self.errors.push(CompilationError::UnexpectedToken);
+            } else if !self.names.contains(s) {
+                self.errors.push(CompilationError::UnrecognizedIdentifier);
+            } else {
+                self.consume(TokenType::Name);
             }
         }
-        if let Some(Token::Symbol('[')) = self.tokenizer.peek() {
+        if self.curr_token == '[' {
             self.consume('[');
             self.compile_expression();
             self.consume(']');
@@ -225,22 +208,14 @@ impl CompilationEngine {
         self.consume('{');
         self.compile_statements();
         self.consume('}');
-        if self.tokenizer.peek() == &Some(Token::Keyword(Else)) {
+        if self.curr_token == Else {
             self.consume(Else);
-            if let Some(t) = self.tokenizer.peek() {
-                match t {
-                    Token::Keyword(If) => self.compile_if(),
-                    Token::Symbol('{') => {
-                        self.consume('{');
-                        self.compile_statements();
-                        self.consume('}');
-                    }
-                    _ => self
-                        .errors
-                        .push(CompilationError::UnexpectedToken(t.clone())),
-                }
+            if self.curr_token == If {
+                self.compile_if();
             } else {
-                self.errors.push(CompilationError::UnexpectedEndOfTokens);
+                self.consume('{');
+                self.compile_statements();
+                self.consume('}');
             }
         }
         writeln!(self.writer, "</ifStatement>").expect("failed to finish if statement");
@@ -249,95 +224,78 @@ impl CompilationEngine {
     fn compile_do(&mut self) {
         writeln!(self.writer, "<doStatement>").expect("failed to start do statement");
         self.consume(Do);
-        if let Some(t) = self.tokenizer.peek() {
-            match t {
-                Identifier(s) => self.compile_subroutine_call(s),
-                _ => self
-                    .errors
-                    .push(CompilationError::UnexpectedToken(t.clone())),
-            }
-        } else {
-            self.errors.push(CompilationError::UnexpectedEndOfTokens);
-        }
+        self.compile_subroutine_call();
+        self.consume(';');
         writeln!(self.writer, "</doStatement>").expect("failed to finish do statement");
     }
 
     fn compile_return(&mut self) {
         writeln!(self.writer, "<returnStatement>").expect("failed to start return statement");
         self.consume(Return);
-        if self.tokenizer.peek() != &Some(Token::Symbol(';')) {
+        if self.curr_token != ';' {
             self.compile_expression();
-        } else {
         }
         self.consume(';');
         writeln!(self.writer, "</returnStatement>").expect("failed to finish return statement");
     }
 
-    fn compile_subroutine_call(&mut self, name: &str) {
-        if self.names.get(Name::Subroutines).contains(name) {
-            self.consume(Name::Subroutines);
-            self.consume('(');
-            self.compile_expression_list();
-            self.consume(')');
-        } else {
-            self.errors.push(CompilationError::UnrecognizedIdentifier);
+    fn compile_subroutine_call(&mut self) {
+        if let Some(Identifier(s)) = self.curr_token.get_identifier() {
+            let (name, subroutine_name) = (
+                self.names.contains(s),
+                self.names.get(Names::Subroutines).contains(s),
+            );
+            if name {
+                self.consume(TokenType::Name);
+                if !subroutine_name {
+                    self.consume('.');
+                    if let Some(Identifier(s)) = self.curr_token.get_identifier() {
+                        if self.names.get(Names::Subroutines).contains(s) {
+                            self.consume(TokenType::Name);
+                        } else {
+                            self.errors.push(CompilationError::UnexpectedToken);
+                        }
+                    } else {
+                        self.errors.push(CompilationError::UnexpectedToken);
+                    }
+                    self.consume('(');
+                    self.compile_expression_list();
+                    self.consume(')');
+                } else {
+                    self.errors.push(CompilationError::UnrecognizedIdentifier);
+                }
+            } else {
+                self.errors.push(CompilationError::UnexpectedToken);
+            }
         }
     }
 
     fn compile_term(&mut self) {
         writeln!(self.writer, "<term>").expect("failed to start term");
-        if let Some(Token::Symbol(c)) = self.tokenizer.peek() {
-            match c {
-                '-' | '~' => self.consume(*c),
-                _ => self
-                    .errors
-                    .push(CompilationError::UnexpectedToken(Token::Symbol(*c))),
+        if self.curr_token == '(' {
+            self.consume('(');
+            self.compile_expression();
+            self.consume(')');
+        } else {
+            if self.curr_token == TokenType::UnaryOp {
+                self.consume(TokenType::UnaryOp);
             }
-        }
-        if let Some(t) = self.tokenizer.peek() {
-            self.consume(TokenType::Constant);
-            match t {
-                Token::Keyword(True)
-                | Token::Keyword(False)
-                | Token::Keyword(This)
-                | Token::Keyword(Null)
-                | Token::IntConst(_)
-                | Token::StringConst(_) => self.consume(t),
-                Token::Identifier(s) => {
-                    if self.names.vars.contains(s) | self.names.class_vars.contains(s) {
-                        self.consume(t);
-                        if let Some(Token::Symbol(c)) = self.tokenizer.peek() {
-                            match c {
-                                '[' => {
-                                    self.consume(&Token::Symbol('['));
-                                    self.compile_expression();
-                                    self.consume(&Token::Symbol(']'));
-                                }
-                                '.' => {
-                                    if let Some(Token::Identifier(s)) = self.tokenizer.peek() {
-                                        self.compile_subroutine_call(s);
-                                    }
-                                }
-                                _ => self
-                                    .errors
-                                    .push(CompilationError::UnexpectedToken(Token::Symbol(*c))),
-                            }
-                        }
-                    } else if self.names.classes.contains(s) {
-                        self.consume(&Token::Symbol('.'));
-                        if let Some(Token::Identifier(s)) = self.tokenizer.peek() {
-                            self.compile_subroutine_call(s);
-                        }
-                    } else {
-                        self.compile_subroutine_call(s);
+            if self.curr_token == TokenType::Constant {
+                self.consume(Constant);
+            } else if let Some(Identifier(s)) = self.curr_token.get_identifier() {
+                if self.names.get(Names::Classes).contains(s)
+                    || self.names.get(Names::Subroutines).contains(s)
+                {
+                    self.compile_subroutine_call();
+                } else {
+                    self.consume(TokenType::Name);
+                    if self.curr_token == '[' {
+                        self.consume('[');
+                        self.compile_expression();
+                        self.consume(']');
                     }
                 }
-                _ => self
-                    .errors
-                    .push(CompilationError::UnexpectedToken(t.clone())),
             }
-        } else {
-            self.errors.push(CompilationError::UnexpectedEndOfTokens);
         }
         writeln!(self.writer, "</term>").expect("failed to finish term");
     }
@@ -345,27 +303,18 @@ impl CompilationEngine {
     fn compile_expression(&mut self) {
         writeln!(self.writer, "<expression>").expect("failed to start expression");
         self.compile_term();
-        if let Some(Token::Symbol(c)) = self.tokenizer.peek() {
-            match c {
-                '+' | '-' | '*' | '/' | '&' | '|' | '<' | '>' | '=' => {
-                    self.consume(*c);
-                    self.compile_term();
-                }
-                _ => self
-                    .errors
-                    .push(CompilationError::UnexpectedToken(Token::Symbol(*c))),
-            }
-        } else {
-            self.errors.push(CompilationError::UnexpectedEndOfTokens);
+        if self.curr_token == TokenType::BinaryOp {
+            self.consume(TokenType::BinaryOp);
+            self.compile_term();
         }
         writeln!(self.writer, "</expression>").expect("failed to finish expression");
     }
 
     fn compile_expression_list(&mut self) {
         writeln!(self.writer, "<expressionList>").expect("failed to start expression list");
-        while self.tokenizer.peek() != &Some(Token::Symbol(')')) {
+        while self.curr_token != ')' {
             self.compile_expression();
-            if self.tokenizer.peek() == &Some(Token::Symbol(',')) {
+            if self.curr_token == ',' {
                 self.consume(',');
             }
         }

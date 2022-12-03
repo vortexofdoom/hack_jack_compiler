@@ -1,5 +1,5 @@
-use crate::{tokens::*, validation::Token};
-use std::{collections::VecDeque, fs, path::Path,};
+use crate::tokens::*;
+use std::{collections::VecDeque, fs, path::Path};
 
 #[derive(Debug)]
 pub enum TokenizerError {
@@ -17,7 +17,7 @@ impl From<std::num::ParseIntError> for TokenizerError {
 pub struct Tokenizer {
     chars: VecDeque<char>,
     errors: Vec<TokenizerError>,
-    peek: Option<Box<dyn Token>>,
+    peek: Option<Token>,
 }
 
 impl Tokenizer {
@@ -35,7 +35,7 @@ impl Tokenizer {
         tknzr
     }
 
-    pub fn next(&mut self) -> Option<Box<dyn Token>> {
+    pub fn next(&mut self) -> Option<Token> {
         let mut token = self.get_token();
         match (&token, &self.peek) {
             (Some(_), Some(_)) => std::mem::swap(&mut token, &mut self.peek),
@@ -44,18 +44,18 @@ impl Tokenizer {
         token
     }
 
-    pub fn peek(&mut self) -> Option<&dyn Token> {
-        if let Some(s) = self.peek {
-            Some(s.as_ref())
-        } else {
-            if let Some(t) = self.get_token() {
-                self.peek = Some(t);
-                Some(t.as_ref())
-            } else {
-                None
-            }
-        }
-    }
+    // pub fn peek(&mut self) -> Option<&Token> {
+    //     if let Some(s) = &self.peek {
+    //         Some(s)
+    //     } else {
+    //         if let Some(t) = self.get_token() {
+    //             self.peek = Some(t);
+    //             Some(&t)
+    //         } else {
+    //             None
+    //         }
+    //     }
+    // }
 
     fn is_comment(&mut self) -> bool {
         match self.chars.get(0) {
@@ -80,7 +80,7 @@ impl Tokenizer {
         }
     }
 
-    fn get_string(&mut self) -> Option<Box<dyn Token>> {
+    fn get_string(&mut self) -> Option<Token> {
         let mut chars = self.chars.iter().enumerate();
         let mut end = self.chars.len();
         while let Some((i, &c)) = chars.next() {
@@ -90,10 +90,10 @@ impl Tokenizer {
             }
         }
         let s: String = self.chars.drain(..end).collect();
-        Some(s.as_token())
+        Some(Token::from(s))
     }
 
-    pub fn get_token(&mut self) -> Option<Box<dyn Token>> {
+    pub fn get_token(&mut self) -> Option<Token> {
         if let Some(c) = self.chars.pop_front() {
             if SYMBOLS.contains(&c) {
                 match c {
@@ -102,7 +102,7 @@ impl Tokenizer {
                         if c == '/' && self.is_comment() {
                             self.get_token()
                         } else {
-                            Some(c.as_token())
+                            Some(Token::from(c))
                         }
                     }
                 }
@@ -118,7 +118,7 @@ impl Tokenizer {
                 }
                 num.extend(self.chars.drain(..end));
                 if let Ok(i) = num.parse::<i16>() {
-                    Some(i.as_token())
+                    Some(Token::from(i))
                 } else {
                     self.errors.push(TokenizerError::InvalidInt);
                     self.get_token()
@@ -135,9 +135,9 @@ impl Tokenizer {
                 }
                 word.extend(self.chars.drain(..end));
                 if let Some(&k) = KEYWORDS.get(word.as_str()) {
-                    Some(k.as_token())
+                    Some(Token::from(k))
                 } else {
-                    Some(Identifier(word).as_token())
+                    Some(Token::from(Identifier(word)))
                 }
             } else if !c.is_whitespace() {
                 self.errors.push(TokenizerError::UnrecognizedToken);
@@ -184,7 +184,10 @@ mod tests {
             peek: None,
         };
         let token = tknzr.next().expect("no token");
-        assert_eq!(format!("{token}"), format!("{}", Box::new(TokenWrapper::wrap(12364))));
+        assert_eq!(
+            format!("{token}"),
+            format!("{}", Box::new(TokenWrapper::wrap(12364)))
+        );
     }
 
     // #[test]
@@ -212,7 +215,15 @@ mod tests {
             peek: None,
         };
         let token = tknzr.next().expect("no token");
-        assert_eq!(format!("{token}"), format!("{}", TokenWrapper::wrap(String::from("this is a string with a // comment in it and a /*/comment**/"))));
+        assert_eq!(
+            format!("{token}"),
+            format!(
+                "{}",
+                TokenWrapper::wrap(String::from(
+                    "this is a string with a // comment in it and a /*/comment**/"
+                ))
+            )
+        );
     }
 
     #[test]

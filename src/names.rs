@@ -1,6 +1,6 @@
 use std::collections::HashSet;
 
-use crate::validation::{Token, TokenType};
+//use crate::validation::TokenType;
 
 pub struct NameSet {
     classes: HashSet<String>,
@@ -27,6 +27,13 @@ impl NameSet {
             Names::Vars => &mut self.vars,
         }
     }
+
+    pub fn contains(&mut self, name: &str) -> bool {
+        self.classes.contains(name)
+            || self.class_vars.contains(name)
+            || self.vars.contains(name)
+            || self.subroutines.contains(name)
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -36,3 +43,9 @@ pub enum Names {
     Subroutines,
     Vars,
 }
+
+// impl Names {
+//     pub fn is_valid(&self, name_set: &NameSet, name: &str) -> bool {
+//         name_set.get(*self).contains(name)
+//     }
+// }
