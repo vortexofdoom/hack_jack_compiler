@@ -7,7 +7,3 @@ edition = "2021"
 
 [dependencies]
 lazy_static = "1.4.0"
-regex = "1"
-traitcast = "0.*"
-inventory = "0.1.*"
-traitcast_core = "0.2.*"
