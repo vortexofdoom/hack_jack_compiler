@@ -5,7 +5,7 @@ use std::{collections::VecDeque, fs, path::Path};
 pub enum TokenizerError {
     InvalidInt,
     UnrecognizedToken,
-    EndOfFile,
+    //EndOfFile,
 }
 
 impl From<std::num::ParseIntError> for TokenizerError {
@@ -37,25 +37,11 @@ impl Tokenizer {
 
     pub fn next(&mut self) -> Option<Token> {
         let mut token = self.get_token();
-        match (&token, &self.peek) {
-            (Some(_), Some(_)) => std::mem::swap(&mut token, &mut self.peek),
-            _ => {}
+        if let (Some(_), Some(_)) = (&token, &self.peek) {
+            std::mem::swap(&mut token, &mut self.peek)
         }
         token
     }
-
-    // pub fn peek(&mut self) -> Option<&Token> {
-    //     if let Some(s) = &self.peek {
-    //         Some(s)
-    //     } else {
-    //         if let Some(t) = self.get_token() {
-    //             self.peek = Some(t);
-    //             Some(&t)
-    //         } else {
-    //             None
-    //         }
-    //     }
-    // }
 
     fn is_comment(&mut self) -> bool {
         match self.chars.get(0) {
@@ -81,9 +67,8 @@ impl Tokenizer {
     }
 
     fn get_string(&mut self) -> Option<Token> {
-        let mut chars = self.chars.iter().enumerate();
         let mut end = self.chars.len();
-        while let Some((i, &c)) = chars.next() {
+        for (i, &c) in self.chars.iter().enumerate() {
             if c == '"' {
                 end = i;
                 break;
@@ -108,9 +93,8 @@ impl Tokenizer {
                 }
             } else if c.is_numeric() {
                 let mut num = String::from(c);
-                let mut chars = self.chars.iter().enumerate();
                 let mut end = self.chars.len();
-                while let Some((i, &c)) = chars.next() {
+                for (i, &c) in self.chars.iter().enumerate() {
                     if !c.is_numeric() {
                         end = i;
                         break;
@@ -125,9 +109,8 @@ impl Tokenizer {
                 }
             } else if c.is_alphabetic() || c == '_' {
                 let mut word = String::from(c);
-                let mut chars = self.chars.iter().enumerate();
                 let mut end = self.chars.len();
-                while let Some((i, &c)) = chars.next() {
+                for (i, &c) in self.chars.iter().enumerate() {
                     if !(c.is_alphanumeric() || c == '_') {
                         end = i;
                         break;
@@ -162,7 +145,7 @@ mod tests {
             peek: None,
         };
         let token = tknzr.next().expect("no token");
-        assert_eq!(format!("{token}"), format!("{}", Keyword::Class));
+        assert_eq!(token, Keyword::Class);
     }
 
     #[test]
@@ -173,7 +156,7 @@ mod tests {
             peek: None,
         };
         let token = tknzr.next().expect("no token");
-        assert_eq!(format!("{token}"), format!("{}", TokenWrapper::wrap('(')));
+        assert_eq!(token, '(');
     }
 
     #[test]
@@ -184,27 +167,20 @@ mod tests {
             peek: None,
         };
         let token = tknzr.next().expect("no token");
-        assert_eq!(
-            format!("{token}"),
-            format!("{}", Box::new(TokenWrapper::wrap(12364)))
-        );
+        assert_eq!(token, 12364);
     }
 
-    // #[test]
-    // fn test_identifier() {
-    //     let s = "_helf12_3rd";
-    //     let mut tknzr = Tokenizer {
-    //         chars: s.chars().collect(),
-    //         peek: None,
-    //     };
-    //     if let Ok(token) = tknzr.next()
-    //         .expect("no token")
-    //         .as_any_box()
-    //         .downcast::<Identifier>() {
-    //             let Identifier(s2) = *token;
-    //             assert_eq!(s2, String::from(s))
-    //         }
-    // }
+    #[test]
+    fn test_identifier() {
+        let s = "_helf12_3rd";
+        let mut tknzr = Tokenizer {
+            chars: s.chars().collect(),
+            errors: vec![],
+            peek: None,
+        };
+        let token = tknzr.next().expect("no token");
+        assert_eq!(token, Identifier(String::from(s)));
+    }
 
     #[test]
     fn test_string() {
@@ -216,13 +192,8 @@ mod tests {
         };
         let token = tknzr.next().expect("no token");
         assert_eq!(
-            format!("{token}"),
-            format!(
-                "{}",
-                TokenWrapper::wrap(String::from(
-                    "this is a string with a // comment in it and a /*/comment**/"
-                ))
-            )
+            token,
+            String::from("this is a string with a // comment in it and a /*/comment**/")
         );
     }
 
@@ -234,7 +205,7 @@ mod tests {
             peek: None,
         };
         let token = tknzr.next().expect("no token");
-        assert_eq!(format!("{token}"), format!("{}", Keyword::Void));
+        assert_eq!(token, Keyword::Void);
     }
 
     #[test]
@@ -245,6 +216,6 @@ mod tests {
             peek: None,
         };
         let token = tknzr.next().expect("no token");
-        assert_eq!(format!("{token}"), format!("{}", Keyword::Let));
+        assert_eq!(token, Keyword::Let);
     }
 }

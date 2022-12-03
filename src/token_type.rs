@@ -1,15 +1,9 @@
-use std::{
-    fmt::{Debug, Display},
-    ops::Sub,
-};
+use std::fmt::{Debug, Display};
 
-use crate::{
-    names::{NameSet, Names},
-    tokens::{
-        Identifier,
-        Keyword::{self, *},
-        Token, TokenWrapper, ValidToken,
-    },
+use crate::tokens::{
+    Identifier,
+    Keyword::{self, *},
+    Token, TokenWrapper,
 };
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -26,45 +20,23 @@ pub enum TokenType {
 }
 impl PartialEq<Token> for TokenType {
     fn eq(&self, other: &Token) -> bool {
-        if let Some(t) = other.get_keyword() {
+        if let Some(t) = other.keyword() {
             t == self
-        } else if let Some(t) = other.get_symbol() {
+        } else if let Some(t) = other.symbol() {
             t == self
-        } else if let Some(t) = other.get_identifier() {
+        } else if let Some(t) = other.identifier() {
             t == self
-        } else if let Some(t) = other.get_int_const() {
+        } else if let Some(t) = other.int_const() {
             t == self
-        } else if let Some(t) = other.get_str_const() {
+        } else if let Some(t) = other.str_const() {
             t == self
         } else {
             false
         }
     }
 }
-impl TokenType {
-    pub fn compare(t1: &dyn ValidToken, t2: &dyn ValidToken) -> bool {
-        (t1 == &Self::ClassVarDec) == (t2 == &Self::ClassVarDec)
-            && (t1 == &Self::Name) == (t2 == &Self::Name)
-            && (t1 == &Self::Constant) == (t2 == &Self::Constant)
-            && (t1 == &Self::BinaryOp) == (t2 == &Self::BinaryOp)
-            && (t1 == &Self::UnaryOp) == (t2 == &Self::UnaryOp)
-            && (t1 == &Self::Statement) == (t2 == &Self::Statement)
-            && (t1 == &Self::SubroutineDec) == (t2 == &Self::SubroutineDec)
-            && (t1 == &Self::Type) == (t2 == &Self::Type)
-            && (t1 == &Self::ReturnType) == (t2 == &Self::ReturnType)
-    }
-}
+
 impl crate::tokens::ValidToken for TokenType {}
-// impl PartialEq<TokenWrapper> for TokenType {
-//     fn eq(&self, other: &TokenWrapper) -> bool {
-//         match (self, other) {
-//             (Self::UnaryOp, TokenWrapper::Symbol(c)) => matches!(c, '-'|'~'),
-//             (Self::BinaryOp, TokenWrapper::Symbol(c)) => matches!(c, '+' | '-' | '*' | '/' | '&' | '|' | '<' | '>' | '='),
-//             (Self::Constant, _) => true,
-//             _ => false,
-//         }
-//     }
-// }
 
 impl Display for TokenType {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {

@@ -4,9 +4,9 @@ use crate::{
     tokens::{
         Identifier,
         Keyword::{self, *},
-        Token, TokenWrapper, ValidToken,
+        Token, ValidToken,
     },
-    validation::TokenType,
+    token_type::TokenType,
 };
 use std::{
     fs::File,
@@ -25,10 +25,9 @@ pub enum CompilationError {
     DuplicateIdentifier,
     UnexpectedToken,
     UnrecognizedIdentifier,
-    UnexpectedEndOfTokens,
 }
 
-use crate::validation::TokenType::*;
+use crate::token_type::TokenType::*;
 impl CompilationEngine {
     pub fn compile(filename: &str, mut tokenizer: Tokenizer) -> Result<(), Vec<CompilationError>> {
         let output =
@@ -36,7 +35,7 @@ impl CompilationEngine {
         let token = tokenizer.next().expect("unexpected end of tokens");
         let mut engine = CompilationEngine {
             writer: BufWriter::new(output),
-            tokenizer: tokenizer,
+            tokenizer,
             curr_token: token,
             errors: vec![],
             names: NameSet::new(),
@@ -66,14 +65,14 @@ impl CompilationEngine {
 
     fn check_for_duplicate(&mut self, set: Names) {
         let name_set = self.names.get(set);
-        if let Some(Identifier(s)) = self.curr_token.get_identifier() {
+        if let Some(Identifier(s)) = self.curr_token.identifier() {
             if name_set.insert(s.clone()) {
                 self.consume(TokenType::Name);
             } else {
                 self.errors.push(CompilationError::DuplicateIdentifier);
             }
         } else {
-            self.errors.push(CompilationError::UnexpectedEndOfTokens);
+            self.errors.push(CompilationError::UnexpectedToken);
         }
     }
 
@@ -140,22 +139,29 @@ impl CompilationEngine {
     fn compile_var_dec(&mut self) {
         writeln!(self.writer, "<varDec>").expect("failed to start var declaration");
         self.consume(Var);
-        self.check_for_type();
-        if let Some(Identifier(s)) = self.curr_token.get_identifier() {}
+        self.consume(TokenType::Type);
+        if let Some(Identifier(s)) = self.curr_token.identifier() {
+            if self.names.get(Names::Vars).insert(s.clone()) {
+                self.consume(TokenType::Name);
+            } else {
+                self.errors.push(CompilationError::DuplicateIdentifier);
+            }
+        } else {
+            self.errors.push(CompilationError::UnexpectedToken);
+        }
         self.consume(';');
         writeln!(self.writer, "</varDec>").expect("failed to finish var declaration");
     }
 
-    //REFACTOR WITH NEW VALIDATION
     fn compile_statements(&mut self) {
         writeln!(self.writer, "<statements>").expect("failed to start statements");
         while self.curr_token == TokenType::Statement {
-            match self.curr_token.get_keyword() {
-                Some(Let) => self.compile_if(),
+            match self.curr_token.keyword() {
+                Some(Let) => self.compile_let(),
                 Some(If) => self.compile_if(),
-                Some(While) => self.compile_if(),
-                Some(Do) => self.compile_if(),
-                Some(Return) => self.compile_if(),
+                Some(While) => self.compile_while(),
+                Some(Do) => self.compile_do(),
+                Some(Return) => self.compile_return(),
                 _ => break,
             }
         }
@@ -165,7 +171,7 @@ impl CompilationEngine {
     fn compile_let(&mut self) {
         writeln!(self.writer, "<letStatement>").expect("failed to start let statement");
         self.consume(Let);
-        if let Some(Identifier(s)) = self.curr_token.get_identifier() {
+        if let Some(Identifier(s)) = self.curr_token.identifier() {
             if self.names.get(Names::Classes).contains(s)
                 || self.names.get(Names::Subroutines).contains(s)
             {
@@ -240,7 +246,7 @@ impl CompilationEngine {
     }
 
     fn compile_subroutine_call(&mut self) {
-        if let Some(Identifier(s)) = self.curr_token.get_identifier() {
+        if let Some(Identifier(s)) = self.curr_token.identifier() {
             let (name, subroutine_name) = (
                 self.names.contains(s),
                 self.names.get(Names::Subroutines).contains(s),
@@ -249,7 +255,7 @@ impl CompilationEngine {
                 self.consume(TokenType::Name);
                 if !subroutine_name {
                     self.consume('.');
-                    if let Some(Identifier(s)) = self.curr_token.get_identifier() {
+                    if let Some(Identifier(s)) = self.curr_token.identifier() {
                         if self.names.get(Names::Subroutines).contains(s) {
                             self.consume(TokenType::Name);
                         } else {
@@ -282,7 +288,7 @@ impl CompilationEngine {
             }
             if self.curr_token == TokenType::Constant {
                 self.consume(Constant);
-            } else if let Some(Identifier(s)) = self.curr_token.get_identifier() {
+            } else if let Some(Identifier(s)) = self.curr_token.identifier() {
                 if self.names.get(Names::Classes).contains(s)
                     || self.names.get(Names::Subroutines).contains(s)
                 {

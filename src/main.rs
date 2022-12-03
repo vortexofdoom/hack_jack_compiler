@@ -9,7 +9,7 @@ mod compilation_engine;
 mod names;
 mod tokenizer;
 mod tokens;
-mod validation;
+mod token_type;
 
 fn main() {
     let args: Vec<String> = std::env::args().collect();
