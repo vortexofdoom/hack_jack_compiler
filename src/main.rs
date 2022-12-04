@@ -9,6 +9,7 @@ mod parser;
 mod token_type;
 mod tokenizer;
 mod tokens;
+mod xml_writer;
 
 fn main() {
     let args: Vec<String> = std::env::args().collect();

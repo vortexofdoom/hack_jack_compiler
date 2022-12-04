@@ -5,7 +5,7 @@ use crate::{
     tokens::{
         Keyword::{self, *},
         Token,
-    },
+    }, xml_writer::XMLWriter,
 };
 use std::{
     fs::File,
@@ -14,7 +14,7 @@ use std::{
 };
 
 pub struct Parser {
-    writer: Option<BufWriter<File>>,
+    writer: XMLWriter,
     tokenizer: Tokenizer,
     curr_token: Option<Token>,
     errors: Vec<(CompilationError, Option<Token>)>,
@@ -33,7 +33,7 @@ use crate::token_type::TokenType::*;
 impl Parser {
     pub fn new() -> Self {
         Parser {
-            writer: None,
+            writer: XMLWriter::default(),
             tokenizer: Tokenizer::default(),
             curr_token: None,
             errors: vec![],
@@ -63,9 +63,7 @@ impl Parser {
             .to_str()
             .expect("could not conver to str");
         let tokenizer = Tokenizer::new(std::fs::read_to_string(&file).expect("failed to read"));
-        let output =
-            File::create(Path::new(filename).with_extension("xml")).expect("failed to create file");
-        self.writer = Some(BufWriter::new(output));
+        self.writer = XMLWriter::new(filename);
         self.tokenizer = tokenizer;
         self.curr_token = self.tokenizer.advance();
         // //temp
@@ -74,11 +72,13 @@ impl Parser {
         //     println!("{}", self.curr_token.as_ref().unwrap());
         // }
         // Ok(())
-        writeln!(self.writer.as_mut().expect("no writer"), "<tokens>")
-            .expect("failed to start writing tokens");
+        //writeln!(self.writer.as_mut().expect("no writer"), "<?xml version=\"1.0\" encoding=\"UTF-8\"?>")
+        //.expect("failed to start writing xml");;
+        //writeln!(self.writer.as_mut().expect("no writer"), "<tokens>")
+        //    .expect("failed to start writing tokens");
         self.construct_class();
-        write!(self.writer.as_mut().expect("no writer"), "</tokens>")
-            .expect("failed to finish writing tokens");
+        //write!(self.writer.as_mut().expect("no writer"), "</tokens>")
+        //    .expect("failed to finish writing tokens");
         if !self.errors.is_empty() {
             Err(self.errors.clone())
         } else {
@@ -88,12 +88,7 @@ impl Parser {
 
     fn consume<T: ValidToken + PartialEq<Token> + Copy>(&mut self, requested: T) {
         if self.curr_token_is(requested) {
-            writeln!(
-                self.writer.as_mut().expect("no writer"),
-                "{}",
-                self.curr_token.as_ref().unwrap()
-            )
-            .expect("failed to write token");
+            self.writer.write(self.curr_token.as_ref().expect("no token"));
             self.curr_token = self.tokenizer.advance();
         } else {
             self.throw_error(CompilationError::UnexpectedToken);
@@ -114,10 +109,9 @@ impl Parser {
     // }
 
     fn construct_class(&mut self) {
-        writeln!(self.writer.as_mut().expect("no writer"), "<class>")
-            .expect("failed to start writing class");
-        write!(self.writer.as_mut().expect("no writer"), "\t")
-            .expect("failed to write");
+        self.writer.open_tag("class");
+        //write!(self.writer.as_mut().expect("no writer"), "\t")
+        //    .expect("failed to write");
         self.consume(Class);
         self.consume(TokenType::Name);
         // the world is not yet ready for validation, let's get parsing handled first
@@ -129,22 +123,26 @@ impl Parser {
         //     Err(e) => self.throw_error(e),
         // }
         self.consume('{');
-        while self.curr_token_is(TokenType::ClassVarDec) {
-            self.compile_class_var_dec();
+        loop {
+            if self.curr_token_is(TokenType::ClassVarDec) {
+                self.compile_class_var_dec();      
+            } else {
+                break;
+            }
         }
-        while self.curr_token_is(TokenType::SubroutineDec) {
-            self.compile_subroutine_dec();
-        }
+        loop {
+            if self.curr_token_is(TokenType::SubroutineDec) {
+                self.compile_subroutine_dec();
+            } else {
+                break;
+            }
+        }        
         self.consume('}');
-        writeln!(self.writer.as_mut().expect("no writer"), "</class>")
-            .expect("failed to finish writing class");
+        self.writer.close_tag("class");
     }
 
     fn compile_class_var_dec(&mut self) {
-        writeln!(self.writer.as_mut().expect("no writer"), "<classVarDec>")
-            .expect("failed to start class var declaration");
-        write!(self.writer.as_mut().expect("no writer"), "\t")
-            .expect("failed to write");
+        self.writer.open_tag("classVarDec");
         self.consume(TokenType::ClassVarDec);
         self.consume(TokenType::Type);
         //placeholder
@@ -161,15 +159,17 @@ impl Parser {
             self.consume(TokenType::Name);
         }
         self.consume(';');
-        writeln!(self.writer.as_mut().expect("no writer"), "</classVarDec>")
-            .expect("failed to finish class var declaration");
+        self.writer.close_tag("classVarDec");
     }
 
     fn compile_subroutine_dec(&mut self) {
-        writeln!(self.writer.as_mut().expect("no writer"), "<classVarDec>")
-            .expect("failed to start class var declaration");
-        self.consume(ClassVarDec);
-        self.consume(TokenType::ReturnType);
+        self.writer.open_tag("subroutineDec");
+        self.consume(TokenType::SubroutineDec);
+        if self.curr_token_is(Name) {
+            self.consume(Name);
+        } else {
+            self.consume(TokenType::ReturnType);
+        }
         self.consume(TokenType::Name);
         // match self
         //     .names
@@ -179,46 +179,40 @@ impl Parser {
         //     Err(e) => self.throw_error(e),
         // }
         self.consume('(');
-        if !self.curr_token_is(')') {
-            self.compile_parameter_list();
-        }
+        self.compile_parameter_list();
         self.consume(')');
         self.compile_subroutine_body();
-        writeln!(self.writer.as_mut().expect("no writer"), "</classVarDec>")
-            .expect("failed to finish class var declaration");
+        self.writer.close_tag("subroutineDec")
     }
 
     fn compile_parameter_list(&mut self) {
+        self.writer.open_tag("parameterList");
         self.names.get_mut(Names::Vars).clear();
         while !self.curr_token_is(')') {
             self.consume(TokenType::Type);
+            self.consume(TokenType::Name);
             //self.check_for_duplicate(Names::Vars);
             if self.curr_token_is(',') {
                 self.consume(',');
             }
         }
+        self.writer.close_tag("parameterList");
     }
 
     fn compile_subroutine_body(&mut self) {
         self.names.get_mut(Names::Vars).clear();
-        writeln!(self.writer.as_mut().expect("no writer"), "<subroutineBody>")
-            .expect("failed to start subroutine body");
+        self.writer.open_tag("subroutineBody");
         self.consume('{');
         while self.curr_token_is(Keyword::Var) {
             self.compile_var_dec();
         }
         self.compile_statements();
         self.consume('}');
-        writeln!(
-            self.writer.as_mut().expect("no writer"),
-            "</subroutineBody>"
-        )
-        .expect("failed to finish subroutine body");
+        self.writer.close_tag("subroutineBody");
     }
 
     fn compile_var_dec(&mut self) {
-        writeln!(self.writer.as_mut().expect("no writer"), "<varDec>")
-            .expect("failed to start var declaration");
+        self.writer.open_tag("varDec");
         self.consume(Var);
         self.consume(TokenType::Type);
         self.consume(TokenType::Name);
@@ -230,13 +224,11 @@ impl Parser {
         //     Err(e) => self.throw_error(e),
         // }
         self.consume(';');
-        writeln!(self.writer.as_mut().expect("no writer"), "</varDec>")
-            .expect("failed to finish var declaration");
+        self.writer.close_tag("varDec");
     }
 
     fn compile_statements(&mut self) {
-        writeln!(self.writer.as_mut().expect("no writer"), "<statements>")
-            .expect("failed to start statements");
+        self.writer.open_tag("statements");
         while self.curr_token_is(TokenType::Statement) {
             match self.curr_token.as_ref() {
                 Some(Token::Keyword(Let)) => self.compile_let(),
@@ -247,13 +239,11 @@ impl Parser {
                 _ => break,
             }
         }
-        writeln!(self.writer.as_mut().expect("no writer"), "</statements>")
-            .expect("failed to finish statements");
+        self.writer.close_tag("statements");
     }
 
     fn compile_let(&mut self) {
-        writeln!(self.writer.as_mut().expect("no writer"), "<letStatement>")
-            .expect("failed to start let statement");
+        self.writer.open_tag("letStatement");
         self.consume(Let);
         self.consume(TokenType::Name);
         // let token = self.curr_token.as_ref();
@@ -274,13 +264,11 @@ impl Parser {
         self.consume('=');
         self.compile_expression();
         self.consume(';');
-        writeln!(self.writer.as_mut().expect("no writer"), "</letStatement>")
-            .expect("failed to finish let statement");
+        self.writer.close_tag("letStatement");
     }
 
     fn compile_while(&mut self) {
-        writeln!(self.writer.as_mut().expect("no writer"), "<whileStatement>")
-            .expect("failed to start if statement");
+        self.writer.open_tag("whileStatement");
         self.consume(While);
         self.consume('(');
         self.compile_expression();
@@ -288,16 +276,11 @@ impl Parser {
         self.consume('{');
         self.compile_statements();
         self.consume('}');
-        writeln!(
-            self.writer.as_mut().expect("no writer"),
-            "</whileStatement>"
-        )
-        .expect("failed to finish if statement");
+        self.writer.close_tag("whileStatement");
     }
 
     fn compile_if(&mut self) {
-        writeln!(self.writer.as_mut().expect("no writer"), "<ifStatement>")
-            .expect("failed to start if statement");
+        self.writer.open_tag("ifStatement");
         self.consume(If);
         self.consume('(');
         self.compile_expression();
@@ -315,36 +298,25 @@ impl Parser {
                 self.consume('}');
             }
         }
-        writeln!(self.writer.as_mut().expect("no writer"), "</ifStatement>")
-            .expect("failed to finish if statement");
+        self.writer.close_tag("ifStatement");
     }
 
     fn compile_do(&mut self) {
-        writeln!(self.writer.as_mut().expect("no writer"), "<doStatement>")
-            .expect("failed to start do statement");
+        self.writer.open_tag("doStatement");
         self.consume(Do);
         self.compile_subroutine_call();
         self.consume(';');
-        writeln!(self.writer.as_mut().expect("no writer"), "</doStatement>")
-            .expect("failed to finish do statement");
+        self.writer.close_tag("doStatement");
     }
 
     fn compile_return(&mut self) {
-        writeln!(
-            self.writer.as_mut().expect("no writer"),
-            "<returnStatement>"
-        )
-        .expect("failed to start return statement");
+        self.writer.open_tag("returnStatement");
         self.consume(Return);
         if !self.curr_token_is(';') {
             self.compile_expression();
         }
         self.consume(';');
-        writeln!(
-            self.writer.as_mut().expect("no writer"),
-            "</returnStatement>"
-        )
-        .expect("failed to finish return statement");
+        self.writer.close_tag("returnStatement");
     }
 
     fn compile_subroutine_call(&mut self) {
@@ -354,9 +326,7 @@ impl Parser {
             self.consume(TokenType::Name);
         }
         self.consume('(');
-        if !self.curr_token_is(')') {
-            self.compile_expression_list();
-        }
+        self.compile_expression_list();
         self.consume(')');
 
         //let token = self.curr_token.as_ref();
@@ -383,7 +353,7 @@ impl Parser {
     }
 
     fn compile_term(&mut self) {
-        writeln!(self.writer.as_mut().expect("no writer"), "<term>").expect("failed to start term");
+        self.writer.open_tag("term");
         if self.curr_token_is('(') {
             self.consume('(');
             self.compile_expression();
@@ -412,6 +382,10 @@ impl Parser {
                     self.consume(']');
                 }
             }
+            if self.curr_token_is(BinaryOp) {
+                self.consume(BinaryOp);
+                self.compile_term();
+            }
             // } else {
             //     let token = self.curr_token.as_ref();
             //     if self.names.is_valid(Names::Classes, token)
@@ -428,35 +402,27 @@ impl Parser {
             //     }
             // }
         }
-        writeln!(self.writer.as_mut().expect("no writer"), "</term>")
-            .expect("failed to finish term");
+        self.writer.close_tag("term");
     }
 
     fn compile_expression(&mut self) {
-        writeln!(self.writer.as_mut().expect("no writer"), "<expression>")
-            .expect("failed to start expression");
+        self.writer.open_tag("expression");
         self.compile_term();
         if self.curr_token_is(TokenType::BinaryOp) {
             self.consume(TokenType::BinaryOp);
             self.compile_term();
         }
-        writeln!(self.writer.as_mut().expect("no writer"), "</expression>")
-            .expect("failed to finish expression");
+        self.writer.close_tag("expression");
     }
 
     fn compile_expression_list(&mut self) {
-        writeln!(self.writer.as_mut().expect("no writer"), "<expressionList>")
-            .expect("failed to start expression list");
+        self.writer.open_tag("expressionList");
         while !self.curr_token_is(')') {
             self.compile_expression();
             if self.curr_token_is(',') {
                 self.consume(',');
             }
         }
-        writeln!(
-            self.writer.as_mut().expect("no writer"),
-            "</expressionList>"
-        )
-        .expect("failed to finish expression list");
+        self.writer.close_tag("expressionList");
     }
 }

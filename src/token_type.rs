@@ -86,6 +86,19 @@ impl PartialEq<TokenType> for Keyword {
         }
     }
 }
+impl PartialEq<Keyword> for TokenType {
+    fn eq(&self, other: &Keyword) -> bool {
+        match self {
+            TokenType::Constant => matches!(other, True | False | This | Null),
+            TokenType::ClassVarDec => matches!(other, Static | Field),
+            TokenType::Statement => matches!(other, Let | If | While | Do | Return),
+            TokenType::SubroutineDec => matches!(other, Constructor | Function | Method),
+            TokenType::Type => matches!(other, Int | Char | Boolean),
+            TokenType::ReturnType => matches!(other, Void | Int | Char | Boolean),
+            _ => false,
+        }
+    }
+}
 impl PartialEq<TokenType> for String {
     fn eq(&self, other: &TokenType) -> bool {
         other == &TokenType::Constant
