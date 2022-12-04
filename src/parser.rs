@@ -66,12 +66,6 @@ impl Parser {
         self.writer = XMLWriter::new(filename);
         self.tokenizer = tokenizer;
         self.curr_token = self.tokenizer.advance();
-        // //temp
-        // while let Some(_) = self.curr_token {
-        //     self.curr_token = self.tokenizer.advance();
-        //     println!("{}", self.curr_token.as_ref().unwrap());
-        // }
-        // Ok(())
         //writeln!(self.writer.as_mut().expect("no writer"), "<?xml version=\"1.0\" encoding=\"UTF-8\"?>")
         //.expect("failed to start writing xml");;
         //writeln!(self.writer.as_mut().expect("no writer"), "<tokens>")
@@ -94,19 +88,6 @@ impl Parser {
             self.throw_error(CompilationError::UnexpectedToken);
         }
     }
-
-    // fn check_for_duplicate(&mut self, set: Names) {
-    //     let name_set = self.names.get(set);
-    //     if let Some(Token::Identifier(s)) = self.curr_token {
-    //         if name_set.insert(s.clone()) {
-    //             self.consume(TokenType::Name);
-    //         } else {
-    //             self.throw_error(CompilationError::DuplicateIdentifier);
-    //         }
-    //     } else {
-    //         self.throw_error(CompilationError::UnexpectedToken);
-    //     }
-    // }
 
     fn construct_class(&mut self) {
         self.writer.open_tag("class");
@@ -381,10 +362,6 @@ impl Parser {
                     self.compile_expression();
                     self.consume(']');
                 }
-            }
-            if self.curr_token_is(BinaryOp) {
-                self.consume(BinaryOp);
-                self.compile_term();
             }
             // } else {
             //     let token = self.curr_token.as_ref();
