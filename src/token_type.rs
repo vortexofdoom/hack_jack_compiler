@@ -1,10 +1,21 @@
 use std::fmt::{Debug, Display};
 
 use crate::tokens::{
-    Identifier,
     Keyword::{self, *},
-    Token, TokenWrapper,
+    Token,
 };
+
+pub trait ValidToken: Display + Debug + PartialEq<TokenType> {}
+impl PartialEq<TokenType> for Box<dyn ValidToken> {
+    fn eq(&self, other: &TokenType) -> bool {
+        self.as_ref() == other
+    }
+}
+impl ValidToken for Token {}
+impl ValidToken for Keyword {}
+impl ValidToken for char {}
+impl ValidToken for i16 {}
+impl ValidToken for String {}
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum TokenType {
@@ -18,29 +29,31 @@ pub enum TokenType {
     Type,
     ReturnType,
 }
+impl ValidToken for TokenType {}
 impl PartialEq<Token> for TokenType {
     fn eq(&self, other: &Token) -> bool {
-        if let Some(t) = other.keyword() {
-            t == self
-        } else if let Some(t) = other.symbol() {
-            t == self
-        } else if let Some(t) = other.identifier() {
-            t == self
-        } else if let Some(t) = other.int_const() {
-            t == self
-        } else if let Some(t) = other.str_const() {
-            t == self
-        } else {
-            false
+        match other {
+            Token::Keyword(k) => k == self,
+            Token::Symbol(c) => c == self,
+            Token::Identifier(s) => self == &TokenType::Name,
+            Token::StringConstant(_) | Token::IntConstant(_) => self == &TokenType::Constant,
         }
     }
 }
 
-impl crate::tokens::ValidToken for TokenType {}
-
 impl Display for TokenType {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "")
+        match self {
+            TokenType::ClassVarDec => write!(f, "class var declaration"),
+            TokenType::Constant => write!(f, "constant"),
+            TokenType::Name => write!(f, "name"),
+            TokenType::BinaryOp => write!(f, "binary op"),
+            TokenType::UnaryOp => write!(f, "unary op"),
+            TokenType::Statement => write!(f, "statement"),
+            TokenType::SubroutineDec => write!(f, "subroutine declaration"),
+            TokenType::Type => write!(f, "value type"),
+            TokenType::ReturnType => write!(f, "return type"),
+        }
     }
 }
 
@@ -60,7 +73,6 @@ impl PartialEq<TokenType> for char {
         }
     }
 }
-
 impl PartialEq<TokenType> for Keyword {
     fn eq(&self, other: &TokenType) -> bool {
         match other {
@@ -74,22 +86,8 @@ impl PartialEq<TokenType> for Keyword {
         }
     }
 }
-impl PartialEq<TokenType> for TokenWrapper {
-    fn eq(&self, other: &TokenType) -> bool {
-        match (self, other) {
-            (Self::Symbol(c), _) => c == other,
-            (_, TokenType::Constant) => true,
-            _ => false,
-        }
-    }
-}
 impl PartialEq<TokenType> for String {
     fn eq(&self, other: &TokenType) -> bool {
         other == &TokenType::Constant
-    }
-}
-impl PartialEq<TokenType> for Identifier {
-    fn eq(&self, other: &TokenType) -> bool {
-        matches!(other, TokenType::Name)
     }
 }
