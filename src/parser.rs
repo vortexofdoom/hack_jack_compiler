@@ -58,8 +58,6 @@ impl Parser {
     pub fn compile(&mut self, file: PathBuf) -> Result<(), Vec<(CompilationError, Option<Token>)>> {
         let filename = file
             .as_path()
-            .file_stem()
-            .expect("could not find file name")
             .to_str()
             .expect("could not conver to str");
         let tokenizer = Tokenizer::new(std::fs::read_to_string(&file).expect("failed to read"));
@@ -82,17 +80,17 @@ impl Parser {
 
     fn consume<T: ValidToken + PartialEq<Token> + Copy>(&mut self, requested: T) {
         if self.curr_token_is(requested) {
+            //println!("{}", self.curr_token.as_ref().unwrap());
             self.writer.write(self.curr_token.as_ref().expect("no token"));
             self.curr_token = self.tokenizer.advance();
         } else {
+            //println!("Error: {}", self.curr_token.as_ref().unwrap());
             self.throw_error(CompilationError::UnexpectedToken);
         }
     }
 
     fn construct_class(&mut self) {
         self.writer.open_tag("class");
-        //write!(self.writer.as_mut().expect("no writer"), "\t")
-        //    .expect("failed to write");
         self.consume(Class);
         self.consume(TokenType::Name);
         // the world is not yet ready for validation, let's get parsing handled first
@@ -197,6 +195,10 @@ impl Parser {
         self.consume(Var);
         self.consume(TokenType::Type);
         self.consume(TokenType::Name);
+        while self.curr_token_is(',') {
+            self.consume(',');
+            self.consume(TokenType::Name);
+        }
         // match self
         //     .names
         //     .check_duplicate(Names::Vars, self.curr_token.as_ref())
@@ -251,8 +253,11 @@ impl Parser {
     fn compile_while(&mut self) {
         self.writer.open_tag("whileStatement");
         self.consume(While);
+        
         self.consume('(');
+        
         self.compile_expression();
+        
         self.consume(')');
         self.consume('{');
         self.compile_statements();
@@ -342,10 +347,11 @@ impl Parser {
         } else {
             if self.curr_token_is(TokenType::UnaryOp) {
                 self.consume(TokenType::UnaryOp);
+                self.compile_term();
             }
             if self.curr_token_is(TokenType::Constant) {
                 self.consume(Constant);
-            } else {
+            } else if self.curr_token_is(TokenType::Name) {
                 self.consume(TokenType::Name);
                 if self.curr_token_is('(') {
                     self.consume('(');
@@ -384,6 +390,7 @@ impl Parser {
 
     fn compile_expression(&mut self) {
         self.writer.open_tag("expression");
+        //println!("{}", self.curr_token.as_ref().unwrap());
         self.compile_term();
         if self.curr_token_is(TokenType::BinaryOp) {
             self.consume(TokenType::BinaryOp);
