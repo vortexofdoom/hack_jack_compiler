@@ -1,5 +1,3 @@
 /target
 *.xml
-/hack_compiler
-/here
 *.a
