@@ -35,7 +35,7 @@ impl PartialEq<Token> for TokenType {
         match other {
             Token::Keyword(k) => k == self,
             Token::Symbol(c) => c == self,
-            Token::Identifier(_) => matches!(self, &TokenType::Name | &TokenType::Type),
+            Token::Identifier(_) => matches!(self, &TokenType::Name | &TokenType::Type | &TokenType::ReturnType),
             Token::StringConstant(_) | Token::IntConstant(_) => self == &TokenType::Constant,
         }
     }

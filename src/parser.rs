@@ -1,11 +1,12 @@
 use crate::{
-    names::*,
+    symbol_table::{Kind, SymbolTable},
     token_type::{TokenType, ValidToken},
     tokenizer::Tokenizer,
     tokens::{
         Keyword::{self, *},
         Token,
-    }, xml_writer::XMLWriter,
+    },
+    xml_writer::XMLWriter, vm_writer::CodeWriter,
 };
 use std::{
     fs::File,
@@ -18,7 +19,7 @@ pub struct Parser {
     tokenizer: Tokenizer,
     curr_token: Option<Token>,
     errors: Vec<(CompilationError, Option<Token>)>,
-    names: NameSet,
+    symbol_table: SymbolTable,
 }
 
 #[derive(Debug, Clone)]
@@ -37,14 +38,13 @@ impl Parser {
             tokenizer: Tokenizer::default(),
             curr_token: None,
             errors: vec![],
-            names: NameSet::new(),
+            symbol_table: SymbolTable::default(),
         }
     }
 
     pub fn throw_error(&mut self, err: CompilationError) {
         let token = self.curr_token.as_ref();
         self.errors.push((err, Option::<&Token>::cloned(token)));
-        self.curr_token = self.tokenizer.advance();
     }
 
     pub fn curr_token_is<T: ValidToken + PartialEq<Token>>(&self, other: T) -> bool {
@@ -56,21 +56,12 @@ impl Parser {
     }
 
     pub fn compile(&mut self, file: PathBuf) -> Result<(), Vec<(CompilationError, Option<Token>)>> {
-        let filename = file
-            .as_path()
-            .to_str()
-            .expect("could not conver to str");
+        let filename = file.as_path().to_str().expect("could not conver to str");
         let tokenizer = Tokenizer::new(std::fs::read_to_string(&file).expect("failed to read"));
         self.writer = XMLWriter::new(filename);
         self.tokenizer = tokenizer;
         self.curr_token = self.tokenizer.advance();
-        //writeln!(self.writer.as_mut().expect("no writer"), "<?xml version=\"1.0\" encoding=\"UTF-8\"?>")
-        //.expect("failed to start writing xml");;
-        //writeln!(self.writer.as_mut().expect("no writer"), "<tokens>")
-        //    .expect("failed to start writing tokens");
         self.construct_class();
-        //write!(self.writer.as_mut().expect("no writer"), "</tokens>")
-        //    .expect("failed to finish writing tokens");
         if !self.errors.is_empty() {
             Err(self.errors.clone())
         } else {
@@ -78,33 +69,29 @@ impl Parser {
         }
     }
 
-    fn consume<T: ValidToken + PartialEq<Token> + Copy>(&mut self, requested: T) {
-        if self.curr_token_is(requested) {
-            //println!("{}", self.curr_token.as_ref().unwrap());
-            self.writer.write(self.curr_token.as_ref().expect("no token"));
-            self.curr_token = self.tokenizer.advance();
-        } else {
-            //println!("Error: {}", self.curr_token.as_ref().unwrap());
+    fn consume<T: ValidToken + PartialEq<Token> + Copy>(&mut self, requested: T) -> Token {
+        if !self.curr_token_is(requested) {
             self.throw_error(CompilationError::UnexpectedToken);
+        } else {
+            // leaving this here until we're past xml
+            self.writer
+                .write(self.curr_token.as_ref().expect("no token"));
         }
+        let mut token = self.tokenizer.advance();
+        std::mem::swap(&mut self.curr_token, &mut token);
+        // return the last token in case it's wanted
+        // using it is situational, and if it's not needed this essentially discards it anyway
+        token.unwrap_or(Token::Symbol('#'))
     }
 
     fn construct_class(&mut self) {
-        self.writer.open_tag("class");
+        self.writer.start("class");
         self.consume(Class);
         self.consume(TokenType::Name);
-        // the world is not yet ready for validation, let's get parsing handled first
-        // match self
-        //     .names
-        //     .check_duplicate(Names::Vars, self.curr_token.as_ref())
-        // {
-        //     Ok(()) => self.consume(Name),
-        //     Err(e) => self.throw_error(e),
-        // }
         self.consume('{');
         loop {
             if self.curr_token_is(TokenType::ClassVarDec) {
-                self.compile_class_var_dec();      
+                self.compile_class_var_dec();
             } else {
                 break;
             }
@@ -115,103 +102,121 @@ impl Parser {
             } else {
                 break;
             }
-        }        
+        }
         self.consume('}');
-        self.writer.close_tag("class");
+        self.writer.finish("class");
     }
 
     fn compile_class_var_dec(&mut self) {
-        self.writer.open_tag("classVarDec");
-        self.consume(TokenType::ClassVarDec);
-        self.consume(TokenType::Type);
-        //placeholder
-        self.consume(TokenType::Name);
-        // match self
-        //     .names
-        //     .check_duplicate(Names::ClassVars, self.curr_token.as_ref())
-        // {
-        //     Ok(()) => self.consume(TokenType::Name),
-        //     Err(e) => self.throw_error(e),
-        // }
-        while self.curr_token_is(',') {
-            self.consume(',');
-            self.consume(TokenType::Name);
+        self.writer.start("classVarDec");
+        if let (Token::Keyword(k @ (Static | Field)), typ, Token::Identifier(name)) = (
+            self.consume(TokenType::ClassVarDec),
+            self.consume(TokenType::Type),
+            self.consume(TokenType::Name),
+        ) {
+            let kind = if k == Static {
+                Kind::Static
+            } else {
+                Kind::Field
+            };
+            let type_of = match typ {
+                Token::Keyword(k @ (Int | Char | Boolean)) => format!("{k}"),
+                Token::Identifier(s) => s,
+                _ => String::from("shouldn't be any other var type here"),
+            };
+            self.symbol_table.define(kind, &type_of, name)
+                .map_err(|e| self.throw_error(e))
+                .unwrap();
+            while self.curr_token_is(',') {
+                self.consume(',');
+                if let Token::Identifier(name) = self.consume(TokenType::Name) {
+                    self.symbol_table.define(kind, &type_of, name)
+                        .map_err(|e| self.throw_error(e))
+                        .unwrap();
+                }
+            }
+            self.consume(';');
+            self.writer.finish("classVarDec");
         }
-        self.consume(';');
-        self.writer.close_tag("classVarDec");
     }
 
     fn compile_subroutine_dec(&mut self) {
-        self.writer.open_tag("subroutineDec");
+        self.writer.start("subroutineDec");
+        self.symbol_table.start_subroutine();
         self.consume(TokenType::SubroutineDec);
-        if self.curr_token_is(Name) {
-            self.consume(Name);
-        } else {
-            self.consume(TokenType::ReturnType);
-        }
+        self.consume(TokenType::ReturnType);
         self.consume(TokenType::Name);
-        // match self
-        //     .names
-        //     .check_duplicate(Names::Subroutines, self.curr_token.as_ref())
-        // {
-        //     Ok(()) => self.consume(TokenType::Name),
-        //     Err(e) => self.throw_error(e),
-        // }
         self.consume('(');
         self.compile_parameter_list();
         self.consume(')');
         self.compile_subroutine_body();
-        self.writer.close_tag("subroutineDec")
+        self.writer.finish("subroutineDec")
     }
 
     fn compile_parameter_list(&mut self) {
-        self.writer.open_tag("parameterList");
-        self.names.get_mut(Names::Vars).clear();
+        self.writer.start("parameterList");
         while !self.curr_token_is(')') {
-            self.consume(TokenType::Type);
-            self.consume(TokenType::Name);
-            //self.check_for_duplicate(Names::Vars);
+            if let (typ, Token::Identifier(name)) = (
+                self.consume(TokenType::Type),
+                self.consume(TokenType::Name)
+            ) {
+                let type_of = match typ {
+                    Token::Keyword(k @ (Int | Char | Boolean)) => format!("{k}"),
+                    Token::Identifier(s) => s,
+                    _ => String::from("shouldn't be any other var type here"),
+                };
+                self.symbol_table.define(Kind::Arg, &type_of, name)
+                    .map_err(|e| self.throw_error(e))
+                    .unwrap();
+            }
             if self.curr_token_is(',') {
                 self.consume(',');
             }
         }
-        self.writer.close_tag("parameterList");
+        self.writer.finish("parameterList");
     }
 
     fn compile_subroutine_body(&mut self) {
-        self.names.get_mut(Names::Vars).clear();
-        self.writer.open_tag("subroutineBody");
+        self.writer.start("subroutineBody");
         self.consume('{');
         while self.curr_token_is(Keyword::Var) {
             self.compile_var_dec();
         }
         self.compile_statements();
         self.consume('}');
-        self.writer.close_tag("subroutineBody");
+        self.writer.finish("subroutineBody");
     }
 
     fn compile_var_dec(&mut self) {
-        self.writer.open_tag("varDec");
-        self.consume(Var);
-        self.consume(TokenType::Type);
-        self.consume(TokenType::Name);
-        while self.curr_token_is(',') {
-            self.consume(',');
-            self.consume(TokenType::Name);
+        self.writer.start("varDec");
+        if let (Token::Keyword(_k @ Var), typ, Token::Identifier(name)) = (
+            self.consume(Var),
+            self.consume(TokenType::Type),
+            self.consume(TokenType::Name),
+        ) {
+            let type_of = match typ {
+                Token::Keyword(k @ (Int | Char | Boolean)) => format!("{k}"),
+                Token::Identifier(s) => s,
+                _ => String::from("shouldn't be any other var type here"),
+            };
+            self.symbol_table.define(Kind::Local, &type_of, name)
+                .map_err(|e| self.throw_error(e))
+                .unwrap();
+            while self.curr_token_is(',') {
+                self.consume(',');
+                if let Token::Identifier(name) = self.consume(TokenType::Name) {
+                    self.symbol_table.define(Kind::Local, &type_of, name)
+                        .map_err(|e| self.throw_error(e))
+                        .unwrap();
+                }
+            }
+            self.consume(';');
         }
-        // match self
-        //     .names
-        //     .check_duplicate(Names::Vars, self.curr_token.as_ref())
-        // {
-        //     Ok(()) => self.consume(Name),
-        //     Err(e) => self.throw_error(e),
-        // }
-        self.consume(';');
-        self.writer.close_tag("varDec");
+        self.writer.finish("varDec");
     }
 
     fn compile_statements(&mut self) {
-        self.writer.open_tag("statements");
+        self.writer.start("statements");
         while self.curr_token_is(TokenType::Statement) {
             match self.curr_token.as_ref() {
                 Some(Token::Keyword(Let)) => self.compile_let(),
@@ -222,11 +227,11 @@ impl Parser {
                 _ => break,
             }
         }
-        self.writer.close_tag("statements");
+        self.writer.finish("statements");
     }
 
     fn compile_let(&mut self) {
-        self.writer.open_tag("letStatement");
+        self.writer.start("letStatement");
         self.consume(Let);
         self.consume(TokenType::Name);
         // let token = self.curr_token.as_ref();
@@ -247,26 +252,26 @@ impl Parser {
         self.consume('=');
         self.compile_expression();
         self.consume(';');
-        self.writer.close_tag("letStatement");
+        self.writer.finish("letStatement");
     }
 
     fn compile_while(&mut self) {
-        self.writer.open_tag("whileStatement");
+        self.writer.start("whileStatement");
         self.consume(While);
-        
+
         self.consume('(');
-        
+
         self.compile_expression();
-        
+
         self.consume(')');
         self.consume('{');
         self.compile_statements();
         self.consume('}');
-        self.writer.close_tag("whileStatement");
+        self.writer.finish("whileStatement");
     }
 
     fn compile_if(&mut self) {
-        self.writer.open_tag("ifStatement");
+        self.writer.start("ifStatement");
         self.consume(If);
         self.consume('(');
         self.compile_expression();
@@ -284,25 +289,25 @@ impl Parser {
                 self.consume('}');
             }
         }
-        self.writer.close_tag("ifStatement");
+        self.writer.finish("ifStatement");
     }
 
     fn compile_do(&mut self) {
-        self.writer.open_tag("doStatement");
+        self.writer.start("doStatement");
         self.consume(Do);
         self.compile_subroutine_call();
         self.consume(';');
-        self.writer.close_tag("doStatement");
+        self.writer.finish("doStatement");
     }
 
     fn compile_return(&mut self) {
-        self.writer.open_tag("returnStatement");
+        self.writer.start("returnStatement");
         self.consume(Return);
         if !self.curr_token_is(';') {
             self.compile_expression();
         }
         self.consume(';');
-        self.writer.close_tag("returnStatement");
+        self.writer.finish("returnStatement");
     }
 
     fn compile_subroutine_call(&mut self) {
@@ -339,7 +344,7 @@ impl Parser {
     }
 
     fn compile_term(&mut self) {
-        self.writer.open_tag("term");
+        self.writer.start("term");
         if self.curr_token_is('(') {
             self.consume('(');
             self.compile_expression();
@@ -385,28 +390,36 @@ impl Parser {
             //     }
             // }
         }
-        self.writer.close_tag("term");
+        self.writer.finish("term");
     }
 
     fn compile_expression(&mut self) {
-        self.writer.open_tag("expression");
-        //println!("{}", self.curr_token.as_ref().unwrap());
+        self.writer.start("expression");
         self.compile_term();
         if self.curr_token_is(TokenType::BinaryOp) {
             self.consume(TokenType::BinaryOp);
             self.compile_term();
         }
-        self.writer.close_tag("expression");
+        self.writer.finish("expression");
     }
 
     fn compile_expression_list(&mut self) {
-        self.writer.open_tag("expressionList");
+        self.writer.start("expressionList");
         while !self.curr_token_is(')') {
             self.compile_expression();
             if self.curr_token_is(',') {
                 self.consume(',');
             }
         }
-        self.writer.close_tag("expressionList");
+        self.writer.finish("expressionList");
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    #[test]
+    fn test_symbol_table_class_var_dec() {
+        let parser = Parser::new();
     }
 }

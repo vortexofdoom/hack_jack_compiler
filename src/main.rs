@@ -4,11 +4,12 @@ use std::path::{Path, PathBuf};
 #[macro_use]
 extern crate lazy_static;
 
-mod names;
 mod parser;
+mod symbol_table;
 mod token_type;
 mod tokenizer;
 mod tokens;
+mod vm_writer;
 mod xml_writer;
 
 fn main() {
