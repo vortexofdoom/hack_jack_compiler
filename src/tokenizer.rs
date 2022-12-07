@@ -1,23 +1,16 @@
-use crate::tokens::*;
-use std::{collections::VecDeque, fs, path::Path, rc::Rc};
+use crate::{parser::CompilationError, tokens::*};
+use std::collections::VecDeque;
 
-#[derive(Debug)]
-pub enum TokenizerError {
-    InvalidInt,
-    UnrecognizedToken,
-    //EndOfFile,
-}
-
-impl From<std::num::ParseIntError> for TokenizerError {
+impl From<std::num::ParseIntError> for CompilationError {
     fn from(_: std::num::ParseIntError) -> Self {
-        TokenizerError::InvalidInt
+        CompilationError::InvalidInt
     }
 }
 
 #[derive(Debug, Default)]
 pub struct Tokenizer {
     chars: VecDeque<char>,
-    errors: Vec<TokenizerError>,
+    errors: Vec<CompilationError>,
     //next: Option<Token>,
 }
 
@@ -122,7 +115,7 @@ impl Tokenizer {
                 if let Ok(i) = num.parse::<i16>() {
                     Some(Token::from(i))
                 } else {
-                    self.errors.push(TokenizerError::InvalidInt);
+                    self.errors.push(CompilationError::InvalidInt);
                     self.advance()
                 }
             } else if c.is_alphabetic() || c == '_' {
@@ -141,7 +134,7 @@ impl Tokenizer {
                     Some(Token::Identifier(word))
                 }
             } else if !c.is_whitespace() {
-                self.errors.push(TokenizerError::UnrecognizedToken);
+                self.errors.push(CompilationError::UnrecognizedToken);
                 self.advance()
             } else {
                 self.advance()

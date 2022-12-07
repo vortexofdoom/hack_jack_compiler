@@ -1,11 +1,11 @@
-use std::collections::HashMap;
+use std::{collections::HashMap, fmt::Display};
 
 use crate::{
-    token_type::{TokenType, ValidToken},
+    parser::CompilationError,
     tokens::{
         Keyword::{self, *},
         Token,
-    }, parser::CompilationError,
+    }, vm_writer::MemSegment,
 };
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -15,19 +15,24 @@ pub enum Kind {
     Arg,
     Local,
 }
-
-pub enum IdentifierError {
-    DuplicateIdentifier,
-    InvalidIdentifier,
-    UnknownIdentifier,
+impl Display for Kind {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let s = match self {
+            Kind::Static => "static",
+            Kind::Field => "this",
+            Kind::Arg => "argument",
+            Kind::Local => "local",
+        };
+        write!(f, "{s}")
+    }
 }
 
 #[derive(Default)]
 pub struct SymbolTable {
-    static_count: i16,
-    field_count: i16,
-    arg_count: i16,
-    local_count: i16,
+    static_count: u16,
+    field_count: u16,
+    arg_count: u16,
+    local_count: u16,
 
     class_lvl_table: HashMap<String, SymbolEntry>,
     subroutine_lvl_table: HashMap<String, SymbolEntry>,
@@ -61,12 +66,41 @@ impl SymbolTable {
         }
     }
 
+    pub fn var_count(&self, kind: Kind) -> u16 {
+        match kind {
+            Kind::Static => self.static_count,
+            Kind::Field => self.field_count,
+            Kind::Arg => self.arg_count,
+            Kind::Local => self.local_count,
+        }
+    }
+
+    pub fn get(&self, name: &str) -> Option<&SymbolEntry> {
+        if let Some(e) = self.class_lvl_table.get(name) {
+            Some(e)
+        } else if let Some(e) = self.subroutine_lvl_table.get(name) {
+            Some(e)
+        } else {
+            None
+        }
+    }
+
     pub fn start_subroutine(&mut self) {
-        self.subroutine_lvl_table.clear()
+        self.subroutine_lvl_table.clear();
+        self.arg_count = 0;
+        self.local_count = 0;
+    }
+
+    pub fn index_of(&self, name: &str) -> Option<(Kind, u16)> {
+        if let Some(e) = self.class_lvl_table.get(name) {
+            Some(e.kind_id)
+        } else {
+            None
+        }
     }
 }
 
 pub struct SymbolEntry {
     var_type: String,
-    kind_id: (Kind, i16),
+    kind_id: (Kind, u16),
 }

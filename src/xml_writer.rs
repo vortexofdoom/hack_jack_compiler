@@ -14,11 +14,11 @@ pub struct XMLWriter {
 impl CodeWriter for XMLWriter {
     fn start(&mut self, code: &str) {
         writeln!(self.writer.as_mut().unwrap(), "<{code}>").expect("failed to write tag");
-        self.flush();     
+        self.flush();
     }
     fn finish(&mut self, tag: &str) {
         writeln!(self.writer.as_mut().unwrap(), "</{tag}>").expect("failed to write tag");
-        self.flush();  
+        self.flush();
     }
     fn new(filename: &str) -> Self {
         let file =
@@ -31,7 +31,7 @@ impl CodeWriter for XMLWriter {
 
     fn write(&mut self, contents: impl Display) {
         writeln!(self.writer.as_mut().unwrap(), "{contents}").expect("failed to write");
-        self.flush();  
+        self.flush();
     }
 
     fn flush(&mut self) {
@@ -39,6 +39,4 @@ impl CodeWriter for XMLWriter {
     }
 }
 
-impl XMLWriter {
-
-}
+impl XMLWriter {}
