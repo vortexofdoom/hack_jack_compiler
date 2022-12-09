@@ -1,22 +1,25 @@
 use crate::{
-    symbol_table::{Kind, SymbolTable},
     token_type::{TokenType, ValidToken},
     tokenizer::Tokenizer,
     tokens::{
         Keyword::{self, *},
         Token,
     },
-    vm_writer::{CodeWriter, Comparison::*, VmCommand, VmWriter, MemSegment as Mem},
-    xml_writer::XMLWriter,
+    symbol_table::*,
+    vm_writer::{
+        CodeWriter, Comparison::*, MemSegment as Mem, VmCommand, VmWriter,
+    },
+    //xml_writer::XMLWriter,
 };
 use std::path::PathBuf;
 
 pub struct CompilationEngine {
     writer: VmWriter,
     tokenizer: Tokenizer,
+    class_name: Token,
     curr_token: Option<Token>,
+    symbol_table: SymbolTable,
     errors: Vec<(CompilationError, Option<Token>)>,
-    //symbol_table: SymbolTable,
 }
 
 #[derive(Debug, Clone)]
@@ -35,9 +38,10 @@ impl CompilationEngine {
         CompilationEngine {
             writer: VmWriter::default(),
             tokenizer: Tokenizer::default(),
+            class_name: Token::Keyword(Null),
+            symbol_table: SymbolTable::default(),
             curr_token: None,
             errors: vec![],
-            //symbol_table: SymbolTable::default(),
         }
     }
 
@@ -54,15 +58,17 @@ impl CompilationEngine {
         }
     }
 
-    pub fn parse(&mut self, file: PathBuf) -> Result<(), Vec<(CompilationError, Option<Token>)>> {
+    pub fn compile(&mut self, file: PathBuf) -> Result<(), &[(CompilationError, Option<Token>)]> {
         let filename = file.as_path().to_str().expect("could not conver to str");
         let tokenizer = Tokenizer::new(std::fs::read_to_string(&file).expect("failed to read"));
         self.writer = VmWriter::new(filename);
         self.tokenizer = tokenizer;
         self.curr_token = self.tokenizer.advance();
         self.construct_class();
-        if !self.errors.is_empty() {
-            Err(self.errors.clone())
+        self.writer.flush();
+        let errors = &self.errors;
+        if !errors.is_empty() {
+            Err(errors)
         } else {
             Ok(())
         }
@@ -74,22 +80,16 @@ impl CompilationEngine {
         } else if !self.curr_token_is(requested) {
             self.throw_error(CompilationError::UnexpectedToken);
         }
-        // leaving this here until we're past xml
-        else {
-            self.writer
-                .write(self.curr_token.as_ref().expect("no token"));
-        }
         let mut token = self.tokenizer.advance();
         std::mem::swap(&mut self.curr_token, &mut token);
         // return the last token in case it's wanted
-        // using it is situational, and if it's not needed this essentially discards it anyway
-        token.unwrap_or(Token::Symbol('#'))
+        // using it is situational, and if it's not needed essentially discards it anyway
+        token.unwrap_or(Token::Symbol('?'))
     }
 
     fn construct_class(&mut self) {
-        self.writer.start("class");
         self.consume(Class);
-        self.consume(TokenType::Name);
+        self.class_name = self.consume(TokenType::Name);
         self.consume('{');
         loop {
             if self.curr_token_is(TokenType::ClassVarDec) {
@@ -106,12 +106,10 @@ impl CompilationEngine {
             }
         }
         self.consume('}');
-        self.writer.finish("class");
     }
 
     fn handle_class_var_dec(&mut self) {
-        self.writer.start("classVarDec");
-        if let (Token::Keyword(k @ (Static | Field)), typ, Token::Identifier(name)) = (
+        if let (Token::Keyword(k @ (Static | Field)), type_of, Token::Identifier(name)) = (
             self.consume(TokenType::ClassVarDec),
             self.consume(TokenType::Type),
             self.consume(TokenType::Name),
@@ -121,76 +119,52 @@ impl CompilationEngine {
             } else {
                 Kind::Field
             };
-            self.writer.compile_var(kind, typ, name);
+            self.symbol_table
+                .define(kind, &type_of, name)
+                .map_err(|e| self.throw_error(e))
+                .unwrap();
             while self.curr_token_is(',') {
                 self.consume(',');
                 if let Token::Identifier(name) = self.consume(TokenType::Name) {
-                    self.writer.compile_var(kind, typ, name);
+                    self.symbol_table
+                        .define(kind, &type_of, name)
+                        .map_err(|e| self.throw_error(e))
+                        .unwrap();
                 }
             }
             self.consume(';');
-            self.writer.finish("classVarDec");
         }
     }
 
     fn handle_subroutine_dec(&mut self) {
-        self.writer.start_subroutine();
+        self.symbol_table.start_subroutine();
         if let (
-            Token::Keyword(k @ (Constructor | Function | Method)),
-            typ,
+            Token::Keyword(func_type @ (Constructor | Function | Method)),
+            _return_type,
             Token::Identifier(name),
         ) = (
             self.consume(TokenType::SubroutineDec),
             self.consume(TokenType::ReturnType),
             self.consume(TokenType::Name),
         ) {
-            let _type_of = match typ {
-                Token::Keyword(k @ (Int | Char | Boolean)) => format!("{k}"),
-                Token::Identifier(s) => s,
-                _ => String::from("shouldn't be any other var type here"),
-            };
+            if func_type == Method {
+                self.symbol_table
+                    .define(Kind::Arg, &self.class_name, String::from("this"))
+                    .map_err(|e| self.throw_error(e))
+                    .unwrap();
+            }
             self.consume('(');
             self.handle_parameter_list();
             self.consume(')');
-
-
-            match k {
-                Constructor => {
-                    self.writer.write(VmCommand::Push(
-                        Mem::Constant, 
-                        self.symbol_table.var_count(Kind::Arg)
-                    ));
-                    self.writer.write(VmCommand::Call(
-                        "Memory.alloc", 
-                        1
-                    ));
-                }
-            }
-            let lcl = match k {
-                Constructor => self.symbol_table.var_count(Kind::Field),
-                Function => self.symbol_table.var_count(Kind::Local),
-                Method => todo!(),
-                _ => 0,
-            };
-            self.writer.write(VmCommand::Function(&name, lcl));
-            self.handle_subroutine_body();
+            self.handle_subroutine_body(name);
         }
-        //self.writer.finish("subroutineDec")
     }
 
     fn handle_parameter_list(&mut self) {
-        //self.writer.start("parameterList");
-        //self.writer.
         while !self.curr_token_is(')') {
-            if let (typ, Token::Identifier(name)) =
+            if let (type_of, Token::Identifier(name)) =
                 (self.consume(TokenType::Type), self.consume(TokenType::Name))
             {
-                self.writer.
-                let type_of = match typ {
-                    Token::Keyword(k @ (Int | Char | Boolean)) => format!("{k}"),
-                    Token::Identifier(s) => s,
-                    _ => String::from("shouldn't be any other var type here"),
-                };
                 self.symbol_table
                     .define(Kind::Arg, &type_of, name)
                     .map_err(|e| self.throw_error(e))
@@ -200,52 +174,42 @@ impl CompilationEngine {
                 self.consume(',');
             }
         }
-        self.writer.finish("parameterList");
     }
 
-    fn handle_subroutine_body(&mut self) {
-        self.writer.start("subroutineBody");
+    fn handle_subroutine_body(&mut self, name: String) {
         self.consume('{');
         while self.curr_token_is(Keyword::Var) {
             self.handle_var_dec();
         }
+        self.writer.write(VmCommand::Function(&format!("{}.{}", self.class_name, name), self.symbol_table.var_count(Kind::Var)));
         self.handle_statements();
         self.consume('}');
-        self.writer.finish("subroutineBody");
     }
 
     fn handle_var_dec(&mut self) {
-        self.writer.start("varDec");
-        if let (Token::Keyword(_k @ Var), typ, Token::Identifier(name)) = (
+        if let (Token::Keyword(_k @ Var), type_of, Token::Identifier(name)) = (
             self.consume(Var),
             self.consume(TokenType::Type),
             self.consume(TokenType::Name),
         ) {
-            let type_of = match typ {
-                Token::Keyword(k @ (Int | Char | Boolean)) => format!("{k}"),
-                Token::Identifier(s) => s,
-                _ => String::from("shouldn't be any other var type here"),
-            };
             self.symbol_table
-                .define(Kind::Local, &type_of, name)
+                .define(Kind::Var, &type_of, name)
                 .map_err(|e| self.throw_error(e))
                 .unwrap();
             while self.curr_token_is(',') {
                 self.consume(',');
                 if let Token::Identifier(name) = self.consume(TokenType::Name) {
                     self.symbol_table
-                        .define(Kind::Local, &type_of, name)
+                        .define(Kind::Var, &type_of, name)
                         .map_err(|e| self.throw_error(e))
                         .unwrap();
                 }
             }
             self.consume(';');
         }
-        self.writer.finish("varDec");
     }
 
     fn handle_statements(&mut self) {
-        self.writer.start("statements");
         while self.curr_token_is(TokenType::Statement) {
             match self.curr_token.as_ref() {
                 Some(Token::Keyword(Let)) => self.handle_let(),
@@ -256,53 +220,69 @@ impl CompilationEngine {
                 _ => break,
             }
         }
-        self.writer.finish("statements");
     }
 
     fn handle_let(&mut self) {
-        self.writer.start("letStatement");
         self.consume(Let);
         if let Token::Identifier(name) = self.consume(TokenType::Name) {
-            if self.symbol_table.get(&name).is_some() {
-                let _kind_id = self.symbol_table.index_of(&name).unwrap();
+            let (mut seg, mut id) = if let Some(entry) = self.symbol_table.get(&name) {
+                (match entry.get_kind() {
+                    Kind::Static => Mem::Static,
+                    Kind::Field => Mem::This,
+                    Kind::Arg => Mem::Argument,
+                    Kind::Var => Mem::Local,
+                }, entry.get_id())
             } else {
                 self.throw_error(CompilationError::UndeclaredIdentifier);
+                (Mem::Constant, 0)
+            };
+            if self.curr_token_is('[') {
+                self.writer.write(VmCommand::Push(seg, id));
+                self.consume('[');
+                self.handle_expression();
+                self.consume(']');
+                self.writer.write(VmCommand::Add);
+                self.writer.write(VmCommand::Pop(Mem::Pointer, 1));
+                (seg, id) = (Mem::That, 0);
             }
-        }
-        if self.curr_token_is('[') {
-            self.consume('[');
+            self.consume('=');
             self.handle_expression();
-            self.consume(']');
+            self.writer.write(VmCommand::Pop(seg, id));
+            self.consume(';');
         }
-        self.consume('=');
-        self.handle_expression();
-        self.consume(';');
-        self.writer.finish("letStatement");
     }
 
     fn handle_while(&mut self) {
-        self.writer.start("whileStatement");
         self.consume(While);
         self.consume('(');
-
+        let start_label = self.writer.generate_label("while");
+        let end_label = self.writer.generate_label("while");
+        self.writer.write(VmCommand::Label(&start_label));
         self.handle_expression();
-
+        self.writer.write(VmCommand::Not);
+        self.writer.write(VmCommand::IfGoto(&end_label));
         self.consume(')');
         self.consume('{');
         self.handle_statements();
+        self.writer.write(VmCommand::Goto(&start_label));
         self.consume('}');
-        self.writer.finish("whileStatement");
+        self.writer.write(VmCommand::Label(&end_label));
     }
 
     fn handle_if(&mut self) {
-        self.writer.start("ifStatement");
         self.consume(If);
         self.consume('(');
         self.handle_expression();
         self.consume(')');
+        self.writer.write(VmCommand::Not);
+        let label1 = self.writer.generate_label("if");
+        let label2 = self.writer.generate_label("if");
+        self.writer.write(VmCommand::IfGoto(&label1));
         self.consume('{');
         self.handle_statements();
         self.consume('}');
+        self.writer.write(VmCommand::Goto(&label2));
+        self.writer.write(VmCommand::Label(&label1));
         if self.curr_token_is(Else) {
             self.consume(Else);
             if self.curr_token_is(If) {
@@ -313,49 +293,54 @@ impl CompilationEngine {
                 self.consume('}');
             }
         }
-        self.writer.finish("ifStatement");
+        self.writer.write(VmCommand::Label(&label2));
     }
 
     fn handle_do(&mut self) {
-        self.writer.start("doStatement");
         self.consume(Do);
         if let Token::Identifier(name) = self.consume(TokenType::Name) {
-            self.handle_subroutine_call(name);
+            if let Some(Token::Symbol(c @ ('.' | '('))) = self.curr_token {
+                self.handle_subroutine_call(name, c);
+            }
         }
         self.consume(';');
-        self.writer.finish("doStatement");
+        self.writer.write(VmCommand::Pop(Mem::Temp, 0));
     }
 
     fn handle_return(&mut self) {
-        self.writer.start("returnStatement");
         self.consume(Return);
         if !self.curr_token_is(';') {
             self.handle_expression();
+        } else {
+            self.writer.write(VmCommand::Push(Mem::Constant, 0));
         }
+        self.writer.write(VmCommand::Return);
         self.consume(';');
-        self.writer.finish("returnStatement");
     }
 
-    fn handle_subroutine_call(&mut self, name: String) {
-        let name = if self.curr_token_is('.') {
-            self.consume('.');
-            if let Token::Identifier(sr) = self.consume(TokenType::Name) {
-                format!("{name}.{sr}")
-            } else {
-                String::from("error")
+    fn handle_subroutine_call(&mut self, name: String, next: char) {
+        let mut method = 0i16;
+        let func_label: String;
+        self.consume(next);
+        if next == '.' {
+            let token = self.consume(Name);
+            match (self.symbol_table.get(&name), token) {
+                (Some(entry), Token::Identifier(f)) => {
+                    func_label = format!("{}.{}", entry.get_type(), f);
+                    method = 1;
+                }
+                (None, Token::Identifier(f)) => func_label = format!("{}.{}", name, f),
+                _ => func_label = String::from("error"),
             }
         } else {
-            name
-        };
-        self.consume('(');
-        self.handle_expression_list();
+            func_label = format!("{}.{}", self.class_name, name);
+        }
+        let args = self.handle_expression_list();
         self.consume(')');
-        let args = self.symbol_table.var_count(Kind::Arg);
-        self.writer.write(VmCommand::Call(&name, args));
+        self.writer.write(VmCommand::Call(&func_label, args + method));
     }
 
     fn handle_term(&mut self) {
-        self.writer.start("term");
         let op = if self.curr_token_is(TokenType::UnaryOp) {
             match self.consume(TokenType::UnaryOp) {
                 Token::Symbol('-') => Some(VmCommand::Neg),
@@ -370,31 +355,27 @@ impl CompilationEngine {
             self.handle_expression();
             self.consume(')');
         } else if self.curr_token_is(TokenType::Constant) {
-            match self.consume(Constant) {
-                Token::Keyword(True) => {}
-                Token::Keyword(False) => {}
-                Token::Keyword(This) => {}
-                Token::Keyword(Null) => {}
-                Token::IntConstant(i) => {}
-                Token::StringConstant(s) => {}
-                _ => {
-                    "this is not a constant";
-                }
-            }
+            let token = self.consume(Constant);
+            self.writer.write_constant(token);
         } else if let Token::Identifier(name) = self.consume(TokenType::Name) {
-            if self.curr_token_is('(') | self.curr_token_is('.') {
-                self.handle_subroutine_call(name);
-            } else if self.curr_token_is('[') {
-                if let Some(e) = self.symbol_table.get(&name) {}
-                self.consume('[');
-                self.handle_expression();
-                self.consume(']');
+            match (self.symbol_table.get(&name), &self.curr_token) {
+                (_, Some(Token::Symbol(c @ ('.' | '(')))) => self.handle_subroutine_call(name, *c),
+                (Some(entry), _) => {
+                    self.writer.write(VmCommand::Push(entry.get_kind().to_mem_seg(), entry.get_id()));
+                    if self.curr_token_is('[') {
+                        self.consume('[');
+                        self.handle_expression();
+                        self.consume(']');
+                        self.writer.write(VmCommand::Add);
+                        self.writer.write(VmCommand::Pop(Mem::Pointer, 1));
+                    }
+                }
+                (None, _) => self.throw_error(CompilationError::UndeclaredIdentifier),
             }
         }
-        if op.is_some() {
-            self.writer.write(op.unwrap());
+        if let Some(o) = op {
+            self.writer.write(o);
         }
-        self.writer.finish("term");
     }
 
     // TODO: maybe add a label for operator priority to get a feel for it
@@ -403,7 +384,6 @@ impl CompilationEngine {
     // until the top-level expression is complete
     // first things first though
     fn handle_expression(&mut self) {
-        self.writer.start("expression");
         self.handle_term();
         if self.curr_token_is(TokenType::BinaryOp) {
             let op = self.consume(TokenType::BinaryOp);
@@ -422,18 +402,18 @@ impl CompilationEngine {
             };
             self.writer.write(op_cmd);
         }
-        self.writer.finish("expression");
     }
 
-    fn handle_expression_list(&mut self) {
-        self.writer.start("expressionList");
+    fn handle_expression_list(&mut self) -> i16 {
+        let mut count: i16 = 0;
         while !self.curr_token_is(')') {
             self.handle_expression();
+            count += 1;
             if self.curr_token_is(',') {
                 self.consume(',');
             }
         }
-        self.writer.finish("expressionList");
+        count
     }
 }
 

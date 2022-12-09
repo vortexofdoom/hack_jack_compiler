@@ -5,7 +5,12 @@ use std::{
     path::Path,
 };
 
-use crate::{token_type::TokenType, symbol_table::{SymbolTable, Kind}, tokens::{Token, Keyword::*}};
+use crate::{
+    tokens::{
+        Keyword::*,
+        Token,
+    },
+};
 
 // Same as VMTranslator enum
 // Someday I want to combine the Compiler/VM Translator/Assembler
@@ -19,18 +24,19 @@ pub enum VmCommand<'a> {
     Or,
     Not,
     //mem access
-    Push(MemSegment, u16),
-    Pop(MemSegment, u16),
+    Push(MemSegment, i16),
+    Pop(MemSegment, i16),
     // Branching
     Label(&'a str),
     Goto(&'a str),
     IfGoto(&'a str),
     // Function
-    Function(&'a str, u16),
-    Call(&'a str, u16),
+    Function(&'a str, i16),
+    Call(&'a str, i16),
     Return,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum MemSegment {
     Argument,
     Local,
@@ -98,32 +104,26 @@ impl Display for VmCommand<'_> {
 pub trait CodeWriter: Default {
     fn write(&mut self, contents: impl Display);
     fn flush(&mut self);
-    fn start(&mut self, code: &str);
-    fn finish(&mut self, code: &str);
     fn new(filename: &str) -> Self;
 }
 
 #[derive(Default)]
 pub struct VmWriter {
     writer: Option<BufWriter<File>>,
-    symbol_table: SymbolTable,
+    //symbol_table: &mut SymbolTable,
+    if_counter: u16,
+    while_counter: u16,
 }
 
 impl CodeWriter for VmWriter {
-    fn start(&mut self, code: &str) {
-        todo!()
-    }
-
-    fn finish(&mut self, code: &str) {
-        todo!()
-    }
     fn new(filename: &str) -> Self {
         let file =
             File::create(Path::new(filename).with_extension("vm")).expect("could not create file");
         let writer = BufWriter::new(file);
         VmWriter {
             writer: Some(writer),
-            symbol_table: SymbolTable::default()
+            if_counter: 0,
+            while_counter: 0,
         }
     }
 
@@ -137,19 +137,37 @@ impl CodeWriter for VmWriter {
 }
 
 impl VmWriter {
-    pub fn compile_var(&mut self, kind: Kind, typ: Token, name: String) {
-        let type_of = match typ {
-            Token::Keyword(k @ (Int | Char | Boolean)) => format!("{k}"),
-            Token::Identifier(s) => s,
-            _ => String::from("shouldn't be any other var type here"),
+    pub fn generate_label(&mut self, label: &str) -> String {
+        let counter = if label == "if" {
+            &mut self.if_counter
+        } else {
+            &mut self.while_counter
         };
-        self.symbol_table
-                .define(kind, &type_of, name)
-                .map_err(|e| /*self.throw_error(e)*/{})
-                .unwrap();
+        let label = format!("{label}{counter}");
+        *counter += 1;
+        label
     }
 
-    pub fn start_subroutine(&self) {
-        self.symbol_table.start_subroutine();
+    pub fn write_constant(&mut self, t: Token) {
+        match t {
+            Token::Keyword(True) => {
+                self.write(VmCommand::Push(MemSegment::Constant, 1));
+                self.write(VmCommand::Neg);
+            }
+            Token::Keyword(False) | Token::Keyword(Null) => {
+                self.write(VmCommand::Push(MemSegment::Constant, 0))
+            }
+            Token::Keyword(This) => self.write(VmCommand::Push(MemSegment::This, 0)),
+            Token::IntConstant(i) => self.write(VmCommand::Push(MemSegment::Constant, i)),
+            Token::StringConstant(s) => {
+                self.write(VmCommand::Push(MemSegment::Constant, s.len() as i16));
+                self.write(VmCommand::Call("String.new", 1));
+                for c in s.chars() {
+                    self.write(VmCommand::Push(MemSegment::Constant, c as i16));
+                    self.write(VmCommand::Call("String.appendChar", 2));
+                }
+            }
+            _ => { /*only passing constants*/ }
+        }
     }
 }

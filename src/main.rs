@@ -29,6 +29,6 @@ fn main() {
         files.push(file_path.to_path_buf())
     }
     for file in files {
-        parser.parse(file).expect("error");
+        parser.compile(file).expect("error");
     }
 }

@@ -12,14 +12,14 @@ pub struct XMLWriter {
     writer: Option<BufWriter<File>>,
 }
 impl CodeWriter for XMLWriter {
-    fn start(&mut self, code: &str) {
-        writeln!(self.writer.as_mut().unwrap(), "<{code}>").expect("failed to write tag");
-        self.flush();
-    }
-    fn finish(&mut self, tag: &str) {
-        writeln!(self.writer.as_mut().unwrap(), "</{tag}>").expect("failed to write tag");
-        self.flush();
-    }
+    // fn start(&mut self, code: &str) {
+    //     writeln!(self.writer.as_mut().unwrap(), "<{code}>").expect("failed to write tag");
+    //     self.flush();
+    // }
+    // fn finish(&mut self, tag: &str) {
+    //     writeln!(self.writer.as_mut().unwrap(), "</{tag}>").expect("failed to write tag");
+    //     self.flush();
+    // }
     fn new(filename: &str) -> Self {
         let file =
             File::create(Path::new(filename).with_extension("xml")).expect("could not create file");
