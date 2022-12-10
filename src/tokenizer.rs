@@ -11,7 +11,6 @@ impl From<std::num::ParseIntError> for CompilationError {
 pub struct Tokenizer {
     chars: VecDeque<char>,
     errors: Vec<CompilationError>,
-    //next: Option<Token>,
 }
 
 impl Tokenizer {
@@ -19,39 +18,9 @@ impl Tokenizer {
         let tknzr = Tokenizer {
             chars: file.trim().chars().collect(),
             errors: vec![],
-            //next: None,
         };
         tknzr
     }
-
-    // pub fn advance(&mut self) -> Option<Token> {
-    //     let mut next = Rc::new(self.next);
-    //     let mut get = Rc::new(self.get_token());
-
-    //     std::mem::swap(&mut next, &mut get);
-    //     // let mut curr_next = self.next.as_ref().as_mut();
-    //     // let mut next = self.get_token().as_mut().as_ref();
-    //     // let swap: bool;
-    //     // match (curr_next, next) {
-    //     //     (Some(_), _) => swap = true,
-    //     //     (None, Some(_)) => swap = false,
-    //     //     _ => return None,
-    //     // }
-    //     // if swap {
-    //     //     std::mem::swap(&mut curr_next, &mut next)
-    //     // } else {
-
-    //     // }
-    //     // let (mut t1, mut t2) = (self.next.as_mut(), self.get_token().as_mut());
-    //     // match (t1, t2) {
-
-    //     // }
-    //     // Option::unwrap_or_default(None)
-    // }
-
-    // pub fn peek(&self) -> Option<&Token> {
-    //     self.next.as_ref()
-    // }
 
     fn is_comment(&mut self) -> bool {
         match self.chars.get(0) {

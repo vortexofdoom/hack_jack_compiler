@@ -394,10 +394,7 @@ impl CompilationEngine {
             match (self.symbol_table.get(&name), &self.curr_token) {
                 (_, Some(Token::Symbol(c @ ('.' | '(')))) => self.handle_subroutine_call(name, *c),
                 (Some(entry), _) => {
-                    let (kind, id) = (
-                        entry.get_kind().to_mem_seg(),
-                        entry.get_id(),
-                    );
+                    let (kind, id) = (entry.get_kind().to_mem_seg(), entry.get_id());
                     if self.curr_token_is('[') {
                         self.consume('[');
                         self.handle_expression();
@@ -454,15 +451,5 @@ impl CompilationEngine {
             }
         }
         count
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-    #[test]
-    fn test_symbol_table_class_var_dec() {
-        let _st = SymbolTable::default();
-        //st.define(Kind::Static, "int", )
     }
 }

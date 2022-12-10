@@ -72,16 +72,6 @@ impl SymbolTable {
         }
     }
 
-    // pub fn vars(&self, kind: Kind) -> Vec<&SymbolEntry> {
-    //     let table = match kind {
-    //         Kind::Static => self.class_lvl_table,
-    //         Kind::Field => self.class_lvl_table,
-    //         Kind::Arg => self.subroutine_lvl_table,
-    //         Kind::Var => self.subroutine_lvl_table,
-    //     };
-    //     table.values().filter(|&e| e.get_kind() == kind).collect()
-    // }
-
     pub fn var_count(&self, kind: Kind) -> i16 {
         match kind {
             Kind::Static => self.static_count,

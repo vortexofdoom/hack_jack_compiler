@@ -105,7 +105,6 @@ pub trait CodeWriter: Default {
 #[derive(Default)]
 pub struct VmWriter {
     writer: Option<BufWriter<File>>,
-    //symbol_table: &mut SymbolTable,
     if_counter: u16,
     while_counter: u16,
 }

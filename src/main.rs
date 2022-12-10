@@ -10,7 +10,6 @@ mod token_type;
 mod tokenizer;
 mod tokens;
 mod vm_writer;
-mod xml_writer;
 
 fn main() {
     let args: Vec<String> = std::env::args().collect();
