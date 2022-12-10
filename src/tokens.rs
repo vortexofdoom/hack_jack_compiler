@@ -15,6 +15,16 @@ pub enum Token {
     StringConstant(String),
 }
 
+impl Token {
+    pub fn as_type(&self) -> String {
+        match self {
+            Token::Keyword(k @ (Int | Char | Boolean)) => format!("{k}"),
+            Token::Identifier(s) => s.clone(),
+            _ => String::from("invalid type"),
+        }
+    }
+}
+
 impl Display for Token {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {

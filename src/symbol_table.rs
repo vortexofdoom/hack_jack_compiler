@@ -1,10 +1,6 @@
 use std::{collections::HashMap, fmt::Display};
 
-use crate::{
-    parser::CompilationError,
-    tokens::Token,
-    vm_writer::MemSegment,
-};
+use crate::{parser::CompilationError, vm_writer::MemSegment};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Kind {
@@ -51,7 +47,7 @@ impl SymbolTable {
     pub fn define(
         &mut self,
         kind: Kind,
-        type_of: &Token,
+        type_of: &str,
         name: String,
     ) -> Result<(), CompilationError> {
         let (table, counter) = match kind {
@@ -64,7 +60,7 @@ impl SymbolTable {
             table.insert(
                 name,
                 SymbolEntry {
-                    var_type: type_of.to_string(),
+                    var_type: String::from(type_of),
                     kind,
                     id: *counter,
                 },
@@ -75,6 +71,16 @@ impl SymbolTable {
             Err(CompilationError::DuplicateIdentifier)
         }
     }
+
+    // pub fn vars(&self, kind: Kind) -> Vec<&SymbolEntry> {
+    //     let table = match kind {
+    //         Kind::Static => self.class_lvl_table,
+    //         Kind::Field => self.class_lvl_table,
+    //         Kind::Arg => self.subroutine_lvl_table,
+    //         Kind::Var => self.subroutine_lvl_table,
+    //     };
+    //     table.values().filter(|&e| e.get_kind() == kind).collect()
+    // }
 
     pub fn var_count(&self, kind: Kind) -> i16 {
         match kind {
@@ -104,7 +110,7 @@ impl SymbolTable {
 
 pub struct SymbolEntry {
     var_type: String,
-    kind: Kind, 
+    kind: Kind,
     id: i16,
 }
 

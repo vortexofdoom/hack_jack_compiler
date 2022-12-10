@@ -5,12 +5,7 @@ use std::{
     path::Path,
 };
 
-use crate::{
-    tokens::{
-        Keyword::*,
-        Token,
-    },
-};
+use crate::tokens::{Keyword::*, Token};
 
 // Same as VMTranslator enum
 // Someday I want to combine the Compiler/VM Translator/Assembler
@@ -128,7 +123,7 @@ impl CodeWriter for VmWriter {
     }
 
     fn write(&mut self, contents: impl Display) {
-        write!(self.writer.as_mut().expect("no writer"), "{contents}").expect("failed to write");
+        writeln!(self.writer.as_mut().expect("no writer"), "{contents}").expect("failed to write");
     }
 
     fn flush(&mut self) {
@@ -157,7 +152,7 @@ impl VmWriter {
             Token::Keyword(False) | Token::Keyword(Null) => {
                 self.write(VmCommand::Push(MemSegment::Constant, 0))
             }
-            Token::Keyword(This) => self.write(VmCommand::Push(MemSegment::This, 0)),
+            Token::Keyword(This) => self.write(VmCommand::Push(MemSegment::Pointer, 0)),
             Token::IntConstant(i) => self.write(VmCommand::Push(MemSegment::Constant, i)),
             Token::StringConstant(s) => {
                 self.write(VmCommand::Push(MemSegment::Constant, s.len() as i16));
