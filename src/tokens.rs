@@ -120,64 +120,6 @@ impl PartialEq<Token> for i16 {
         other == self
     }
 }
-impl From<char> for Token {
-    fn from(value: char) -> Self {
-        Token::Symbol(value)
-    }
-}
-impl From<Keyword> for Token {
-    fn from(value: Keyword) -> Self {
-        Token::Keyword(value)
-    }
-}
-impl From<i16> for Token {
-    fn from(value: i16) -> Self {
-        Token::IntConstant(value)
-    }
-}
-impl TryFrom<Token> for Keyword {
-    type Error = Token;
-
-    fn try_from(value: Token) -> Result<Self, Self::Error> {
-        if let Token::Keyword(t) = value {
-            Ok(t)
-        } else {
-            Err(value)
-        }
-    }
-}
-impl TryFrom<Token> for char {
-    type Error = Token;
-
-    fn try_from(value: Token) -> Result<Self, Self::Error> {
-        if let Token::Symbol(c) = value {
-            Ok(c)
-        } else {
-            Err(value)
-        }
-    }
-}
-impl TryFrom<Token> for i16 {
-    type Error = Token;
-
-    fn try_from(value: Token) -> Result<Self, Self::Error> {
-        if let Token::IntConstant(i) = value {
-            Ok(i)
-        } else {
-            Err(value)
-        }
-    }
-}
-impl TryFrom<Token> for String {
-    type Error = Token;
-
-    fn try_from(value: Token) -> Result<Self, Self::Error> {
-        match value {
-            Token::Identifier(s) | Token::StringConstant(s) => Ok(s),
-            _ => Err(value),
-        }
-    }
-}
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Keyword {
     Class,

@@ -21,7 +21,11 @@ impl Tokenizer {
         };
         tknzr
     }
-
+    
+    // Called when we have already seen a '/'
+    // So we only care if the very next character is '/' or '*'
+    // Advances to the next character after the comment before returning true
+    // Otherwise returns false
     fn is_comment(&mut self) -> bool {
         match self.chars.get(0) {
             Some('*') => {
@@ -62,15 +66,18 @@ impl Tokenizer {
         if let Some(c) = self.chars.pop_front() {
             if SYMBOLS.contains(&c) {
                 match c {
+                    // String constant
                     '"' => self.get_string(),
+                    // Symbols
                     _ => {
                         if c == '/' && self.is_comment() {
                             self.advance()
                         } else {
-                            Some(Token::from(c))
+                            Some(Token::Symbol(c))
                         }
                     }
                 }
+            // Integer constant
             } else if c.is_numeric() {
                 let mut num = String::from(c);
                 let mut end = self.chars.len();
@@ -82,11 +89,12 @@ impl Tokenizer {
                 }
                 num.extend(self.chars.drain(..end));
                 if let Ok(i) = num.parse::<i16>() {
-                    Some(Token::from(i))
+                    Some(Token::IntConstant(i))
                 } else {
                     self.errors.push(CompilationError::InvalidInt);
                     self.advance()
                 }
+            // Keywords and Identifiers
             } else if c.is_alphabetic() || c == '_' {
                 let mut word = String::from(c);
                 let mut end = self.chars.len();
@@ -98,7 +106,7 @@ impl Tokenizer {
                 }
                 word.extend(self.chars.drain(..end));
                 if let Some(&k) = KEYWORDS.get(word.as_str()) {
-                    Some(Token::from(k))
+                    Some(Token::Keyword(k))
                 } else {
                     Some(Token::Identifier(word))
                 }
@@ -181,12 +189,12 @@ mod tests {
             tokens.push(t);
         }
         let t2 = vec![
-            Token::from(Keyword::Let),
-            Token::from(Keyword::Do),
-            Token::from('{'),
-            Token::from('}'),
+            Token::Keyword(Keyword::Let),
+            Token::Keyword(Keyword::Do),
+            Token::Symbol('{'),
+            Token::Symbol('}'),
             Token::StringConstant(String::from("strings still work")),
-            Token::from(';'),
+            Token::Symbol(';'),
         ];
         for i in 0..6 {
             assert_eq!(&tokens[i], &t2[i]);

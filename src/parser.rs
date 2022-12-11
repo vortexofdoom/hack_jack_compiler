@@ -59,12 +59,15 @@ impl CompilationEngine {
     pub fn compile(&mut self, file: PathBuf) -> Result<(), &[(CompilationError, Option<Token>)]> {
         let filename = file.as_path().to_str().expect("could not conver to str");
         let tokenizer = Tokenizer::new(std::fs::read_to_string(&file).expect("failed to read"));
+        
         self.writer = VmWriter::new(filename);
         self.tokenizer = tokenizer;
         self.curr_token = self.tokenizer.advance();
         self.symbol_table = SymbolTable::default();
+        
         self.construct_class();
         self.writer.flush();
+        
         let errors = &self.errors;
         if !errors.is_empty() {
             Err(errors)
@@ -92,24 +95,17 @@ impl CompilationEngine {
             self.class_name = name;
         }
         self.consume('{');
-        loop {
-            if self.curr_token_is(TokenType::ClassVarDec) {
-                self.handle_class_var_dec();
-            } else {
-                break;
-            }
+        while self.curr_token_is(TokenType::ClassVarDec) {
+            self.handle_class_var_dec();
         }
-        loop {
-            if self.curr_token_is(TokenType::SubroutineDec) {
-                self.handle_subroutine_dec();
-            } else {
-                break;
-            }
+        while self.curr_token_is(TokenType::SubroutineDec) {
+            self.handle_subroutine_dec();
         }
         self.consume('}');
     }
 
     fn handle_class_var_dec(&mut self) {
+        // validate syntax and bind relevant elements to variables
         if let (Token::Keyword(k @ (Static | Field)), type_of, Token::Identifier(name)) = (
             self.consume(TokenType::ClassVarDec),
             self.consume(TokenType::Type),
@@ -120,15 +116,19 @@ impl CompilationEngine {
             } else {
                 Kind::Field
             };
+            let type_str = type_of.as_type();
+            // Add the newly declared variable to the symbol table
             self.symbol_table
-                .define(kind, &type_of.as_type(), name)
+                .define(kind, &type_str, name)
                 .map_err(|e| self.throw_error(e))
                 .unwrap();
+            
+            // Support multiple declarations of the same type before a semicolon
             while self.curr_token_is(',') {
                 self.consume(',');
                 if let Token::Identifier(name) = self.consume(TokenType::Name) {
                     self.symbol_table
-                        .define(kind, &type_of.as_type(), name)
+                        .define(kind, &type_str, name)
                         .map_err(|e| self.throw_error(e))
                         .unwrap();
                 }
@@ -138,7 +138,10 @@ impl CompilationEngine {
     }
 
     fn handle_subroutine_dec(&mut self) {
+        // Clear the subroutine symbol table and reset the arg/var counts
         self.symbol_table.start_subroutine();
+
+        // Validate syntax and bind relevant elements to variables
         if let (
             Token::Keyword(func_type @ (Constructor | Function | Method)),
             _return_type,
@@ -148,6 +151,7 @@ impl CompilationEngine {
             self.consume(TokenType::ReturnType),
             self.consume(TokenType::Name),
         ) {
+            // Jack methods include "this" as their first unspoken argument
             if func_type == Method {
                 self.symbol_table
                     .define(Kind::Arg, &self.class_name, String::from("this"))
@@ -155,6 +159,7 @@ impl CompilationEngine {
                     .unwrap();
             }
             self.consume('(');
+            // Add 0 or more arguments to the symbol table
             self.handle_parameter_list();
             self.consume(')');
             self.handle_subroutine_body(func_type, name);
@@ -179,14 +184,17 @@ impl CompilationEngine {
 
     fn handle_subroutine_body(&mut self, func_type: Keyword, name: String) {
         self.consume('{');
+        // Add 0 or more local variables to the symbol table
         while self.curr_token_is(Keyword::Var) {
             self.handle_var_dec();
         }
+        // Declare function now that the symbol table is complete
         self.writer.write(VmCommand::Function(
             &format!("{}.{}", self.class_name, name),
             self.symbol_table.var_count(Kind::Var),
         ));
         if func_type == Constructor {
+            // Constructors require allocating enough memory for all fields and static variables
             self.writer.write(VmCommand::Push(
                 Mem::Constant,
                 self.symbol_table.var_count(Kind::Field),
@@ -194,6 +202,7 @@ impl CompilationEngine {
             self.writer.write(VmCommand::Call("Memory.alloc", 1));
             self.writer.write(VmCommand::Pop(Mem::Pointer, 0));
         } else if func_type == Method {
+            // Methods require a pointer to the current object
             self.writer.write(VmCommand::Push(Mem::Argument, 0));
             self.writer.write(VmCommand::Pop(Mem::Pointer, 0));
         }
@@ -280,17 +289,22 @@ impl CompilationEngine {
     fn handle_while(&mut self) {
         self.consume(While);
         self.consume('(');
+
         let start_label = self.writer.generate_label("while");
         let end_label = self.writer.generate_label("while");
+        // Place the starting label just prior to evaluating the condition
         self.writer.write(VmCommand::Label(&start_label));
         self.handle_expression();
+        // Bypass loop if negated condition is true
         self.writer.write(VmCommand::Not);
         self.writer.write(VmCommand::IfGoto(&end_label));
         self.consume(')');
         self.consume('{');
+        // Inside loop and jump to start
         self.handle_statements();
         self.writer.write(VmCommand::Goto(&start_label));
         self.consume('}');
+        // Label at the end of loop
         self.writer.write(VmCommand::Label(&end_label));
     }
 
@@ -329,6 +343,8 @@ impl CompilationEngine {
             }
         }
         self.consume(';');
+        // All do statements are void function calls
+        // which require discarding the return value that the VM implementation requires
         self.writer.write(VmCommand::Pop(Mem::Temp, 0));
     }
 
@@ -337,6 +353,7 @@ impl CompilationEngine {
         if !self.curr_token_is(';') {
             self.handle_expression();
         } else {
+            // The VM requires that a value is returned even if the type is void
             self.writer.write(VmCommand::Push(Mem::Constant, 0));
         }
         self.writer.write(VmCommand::Return);
@@ -350,6 +367,8 @@ impl CompilationEngine {
         if next == '.' {
             let token = self.consume(Name);
             self.consume('(');
+            // If the name is in the table we get its class for the label and push it so the method can be called
+            // Otherwise, it's simply a class function on its own
             match (self.symbol_table.get(&name), token) {
                 (Some(entry), Token::Identifier(f)) => {
                     self.writer.write(VmCommand::Push(
@@ -363,6 +382,8 @@ impl CompilationEngine {
                 _ => func_label = String::from("error"),
             }
         } else {
+            // Any calls without a '.' will be called from within this class
+            // so we can simply use the class name
             self.writer.write(VmCommand::Push(Mem::Pointer, 0));
             method = 1;
             func_label = format!("{}.{}", self.class_name, name);
@@ -374,6 +395,7 @@ impl CompilationEngine {
     }
 
     fn handle_term(&mut self) {
+        // Check for unary operators
         let op = if self.curr_token_is(TokenType::UnaryOp) {
             match self.consume(TokenType::UnaryOp) {
                 Token::Symbol('-') => Some(VmCommand::Neg),
@@ -391,8 +413,11 @@ impl CompilationEngine {
             let token = self.consume(Constant);
             self.writer.write_constant(token);
         } else if let Token::Identifier(name) = self.consume(TokenType::Name) {
+            // Check whether we are evaluating as a subroutine call or as a value
             match (self.symbol_table.get(&name), &self.curr_token) {
+                // Subroutine
                 (_, Some(Token::Symbol(c @ ('.' | '(')))) => self.handle_subroutine_call(name, *c),
+                // Value
                 (Some(entry), _) => {
                     let (kind, id) = (entry.get_kind().to_mem_seg(), entry.get_id());
                     if self.curr_token_is('[') {
@@ -410,6 +435,7 @@ impl CompilationEngine {
                 (None, _) => self.throw_error(CompilationError::UndeclaredIdentifier),
             }
         }
+        // Use the unary operator
         if let Some(o) = op {
             self.writer.write(o);
         }
@@ -441,6 +467,7 @@ impl CompilationEngine {
         }
     }
 
+    // Evaluates the expressions and returns the total number of arguments for the function caller
     fn handle_expression_list(&mut self) -> i16 {
         let mut count: i16 = 0;
         while !self.curr_token_is(')') {
