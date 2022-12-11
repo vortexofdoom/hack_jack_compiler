@@ -184,15 +184,18 @@ impl CompilationEngine {
 
     fn handle_subroutine_body(&mut self, func_type: Keyword, name: String) {
         self.consume('{');
+
         // Add 0 or more local variables to the symbol table
         while self.curr_token_is(Keyword::Var) {
             self.handle_var_dec();
         }
+
         // Declare function now that the symbol table is complete
         self.writer.write(VmCommand::Function(
             &format!("{}.{}", self.class_name, name),
             self.symbol_table.var_count(Kind::Var),
         ));
+
         if func_type == Constructor {
             // Constructors require allocating enough memory for all fields and static variables
             self.writer.write(VmCommand::Push(
@@ -292,36 +295,48 @@ impl CompilationEngine {
 
         let start_label = self.writer.generate_label("while");
         let end_label = self.writer.generate_label("while");
+
         // Place the starting label just prior to evaluating the condition
         self.writer.write(VmCommand::Label(&start_label));
         self.handle_expression();
+
         // Bypass loop if negated condition is true
         self.writer.write(VmCommand::Not);
         self.writer.write(VmCommand::IfGoto(&end_label));
         self.consume(')');
         self.consume('{');
+
         // Inside loop and jump to start
         self.handle_statements();
         self.writer.write(VmCommand::Goto(&start_label));
         self.consume('}');
+
         // Label at the end of loop
         self.writer.write(VmCommand::Label(&end_label));
     }
 
     fn handle_if(&mut self) {
         self.consume(If);
+
         self.consume('(');
         self.handle_expression();
         self.consume(')');
+
+        // Negate
         self.writer.write(VmCommand::Not);
+        
         let label1 = self.writer.generate_label("if");
         let label2 = self.writer.generate_label("if");
+        
         self.writer.write(VmCommand::IfGoto(&label1));
+
         self.consume('{');
         self.handle_statements();
         self.consume('}');
+        
         self.writer.write(VmCommand::Goto(&label2));
         self.writer.write(VmCommand::Label(&label1));
+        
         if self.curr_token_is(Else) {
             self.consume(Else);
             if self.curr_token_is(If) {
@@ -332,6 +347,7 @@ impl CompilationEngine {
                 self.consume('}');
             }
         }
+        
         self.writer.write(VmCommand::Label(&label2));
     }
 
@@ -343,6 +359,7 @@ impl CompilationEngine {
             }
         }
         self.consume(';');
+
         // All do statements are void function calls
         // which require discarding the return value that the VM implementation requires
         self.writer.write(VmCommand::Pop(Mem::Temp, 0));
@@ -361,12 +378,15 @@ impl CompilationEngine {
     }
 
     fn handle_subroutine_call(&mut self, name: String, next: char) {
+        // Easy way to add an extra argument if we determine the subroutine is a method and requires 'this'
         let mut method = 0i16;
         let func_label: String;
+        
         self.consume(next);
         if next == '.' {
             let token = self.consume(Name);
             self.consume('(');
+            
             // If the name is in the table we get its class for the label and push it so the method can be called
             // Otherwise, it's simply a class function on its own
             match (self.symbol_table.get(&name), token) {
@@ -388,8 +408,10 @@ impl CompilationEngine {
             method = 1;
             func_label = format!("{}.{}", self.class_name, name);
         }
+        
         let args = self.handle_expression_list();
         self.consume(')');
+        
         self.writer
             .write(VmCommand::Call(&func_label, args + method));
     }
@@ -435,7 +457,8 @@ impl CompilationEngine {
                 (None, _) => self.throw_error(CompilationError::UndeclaredIdentifier),
             }
         }
-        // Use the unary operator
+
+        // Use the unary operator if it exists
         if let Some(o) = op {
             self.writer.write(o);
         }
