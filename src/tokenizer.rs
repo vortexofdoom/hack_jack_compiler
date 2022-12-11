@@ -1,4 +1,4 @@
-use crate::{parser::CompilationError, tokens::*};
+use crate::{compilation_engine::CompilationError, tokens::*};
 use std::collections::VecDeque;
 
 impl From<std::num::ParseIntError> for CompilationError {

@@ -322,7 +322,7 @@ impl CompilationEngine {
         self.handle_expression();
         self.consume(')');
 
-        // Negate
+        // Negate for simpler if-goto
         self.writer.write(VmCommand::Not);
         
         let label1 = self.writer.generate_label("if");
