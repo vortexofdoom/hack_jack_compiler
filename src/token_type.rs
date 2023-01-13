@@ -6,6 +6,7 @@ use crate::tokens::{
 };
 
 pub trait ValidToken: Display + Debug + PartialEq<TokenType> {}
+
 impl PartialEq<TokenType> for Box<dyn ValidToken> {
     fn eq(&self, other: &TokenType) -> bool {
         self.as_ref() == other
@@ -69,7 +70,7 @@ impl PartialEq<TokenType> for char {
     fn eq(&self, other: &TokenType) -> bool {
         match other {
             TokenType::BinaryOp => {
-                matches!(self, '+' | '-' | '*' | '/' | '&' | '|' | '<' | '>' | '=')
+                matches!(self, '+' | '-' | '*' | '/' | '%' | '&' | '|' | '<' | '>' | '=')
             }
             TokenType::UnaryOp => matches!(self, '-' | '~'),
             _ => false,

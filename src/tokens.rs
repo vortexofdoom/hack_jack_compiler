@@ -222,6 +222,7 @@ lazy_static! {
         hs.insert('=');
         hs.insert('~');
         hs.insert('"');
+        hs.insert('%');
         hs
     };
 }

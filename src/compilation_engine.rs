@@ -197,7 +197,7 @@ impl CompilationEngine {
         ));
 
         if func_type == Constructor {
-            // Constructors require allocating enough memory for all fields and static variables
+            // Constructors require allocating enough memory for all fields
             self.writer.write(VmCommand::Push(
                 Mem::Constant,
                 self.symbol_table.var_count(Kind::Field),
@@ -360,7 +360,7 @@ impl CompilationEngine {
         }
         self.consume(';');
 
-        // All do statements are void function calls
+        // All Jack "do" statements are void function calls
         // which require discarding the return value that the VM implementation requires
         self.writer.write(VmCommand::Pop(Mem::Temp, 0));
     }
@@ -484,6 +484,7 @@ impl CompilationEngine {
                 Token::Symbol('<') => VmCommand::Compare(LT),
                 Token::Symbol('*') => VmCommand::Call("Math.multiply", 2),
                 Token::Symbol('/') => VmCommand::Call("Math.divide", 2),
+                Token::Symbol('%') => VmCommand::Call("Math.modulo", 2),
                 _ => VmCommand::Label("not a binary op"),
             };
             self.writer.write(op_cmd);
