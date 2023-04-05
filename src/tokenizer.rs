@@ -21,7 +21,7 @@ impl Tokenizer {
         };
         tknzr
     }
-    
+
     // Called when we have already seen a '/'
     // So we only care if the very next character is '/' or '*'
     // Advances to the next character after the comment before returning true

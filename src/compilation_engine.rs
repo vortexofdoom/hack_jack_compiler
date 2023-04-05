@@ -57,17 +57,17 @@ impl CompilationEngine {
     }
 
     pub fn compile(&mut self, file: PathBuf) -> Result<(), &[(CompilationError, Option<Token>)]> {
-        let filename = file.as_path().to_str().expect("could not conver to str");
+        let filename = file.as_path().to_str().expect("could not convert to str");
         let tokenizer = Tokenizer::new(std::fs::read_to_string(&file).expect("failed to read"));
-        
+
         self.writer = VmWriter::new(filename);
         self.tokenizer = tokenizer;
         self.curr_token = self.tokenizer.advance();
         self.symbol_table = SymbolTable::default();
-        
+
         self.construct_class();
         self.writer.flush();
-        
+
         let errors = &self.errors;
         if !errors.is_empty() {
             Err(errors)
@@ -122,7 +122,7 @@ impl CompilationEngine {
                 .define(kind, &type_str, name)
                 .map_err(|e| self.throw_error(e))
                 .unwrap();
-            
+
             // Support multiple declarations of the same type before a semicolon
             while self.curr_token_is(',') {
                 self.consume(',');
@@ -324,19 +324,19 @@ impl CompilationEngine {
 
         // Negate for simpler if-goto
         self.writer.write(VmCommand::Not);
-        
+
         let label1 = self.writer.generate_label("if");
         let label2 = self.writer.generate_label("if");
-        
+
         self.writer.write(VmCommand::IfGoto(&label1));
 
         self.consume('{');
         self.handle_statements();
         self.consume('}');
-        
+
         self.writer.write(VmCommand::Goto(&label2));
         self.writer.write(VmCommand::Label(&label1));
-        
+
         if self.curr_token_is(Else) {
             self.consume(Else);
             if self.curr_token_is(If) {
@@ -347,7 +347,7 @@ impl CompilationEngine {
                 self.consume('}');
             }
         }
-        
+
         self.writer.write(VmCommand::Label(&label2));
     }
 
@@ -360,7 +360,7 @@ impl CompilationEngine {
         }
         self.consume(';');
 
-        // All Jack "do" statements are void function calls
+        // All "do" statements in Jack are "void" function calls
         // which require discarding the return value that the VM implementation requires
         self.writer.write(VmCommand::Pop(Mem::Temp, 0));
     }
@@ -379,14 +379,14 @@ impl CompilationEngine {
 
     fn handle_subroutine_call(&mut self, name: String, next: char) {
         // Easy way to add an extra argument if we determine the subroutine is a method and requires 'this'
-        let mut method = 0i16;
+        let mut method = false;
         let func_label: String;
-        
+
         self.consume(next);
         if next == '.' {
             let token = self.consume(Name);
             self.consume('(');
-            
+
             // If the name is in the table we get its class for the label and push it so the method can be called
             // Otherwise, it's simply a class function on its own
             match (self.symbol_table.get(&name), token) {
@@ -396,7 +396,7 @@ impl CompilationEngine {
                         entry.get_id(),
                     ));
                     func_label = format!("{}.{}", entry.get_type(), f);
-                    method = 1;
+                    method = true;
                 }
                 (None, Token::Identifier(f)) => func_label = format!("{}.{}", name, f),
                 _ => func_label = String::from("error"),
@@ -405,15 +405,15 @@ impl CompilationEngine {
             // Any calls without a '.' will be called from within this class
             // so we can simply use the class name
             self.writer.write(VmCommand::Push(Mem::Pointer, 0));
-            method = 1;
+            method = true;
             func_label = format!("{}.{}", self.class_name, name);
         }
-        
+
         let args = self.handle_expression_list();
         self.consume(')');
-        
+
         self.writer
-            .write(VmCommand::Call(&func_label, args + method));
+            .write(VmCommand::Call(&func_label, args + method as i16));
     }
 
     fn handle_term(&mut self) {

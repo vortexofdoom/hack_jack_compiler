@@ -65,6 +65,8 @@ impl PartialEq<Option<Token>> for Token {
         }
     }
 }
+
+// TODO: Consider macro use here
 impl PartialEq<char> for Token {
     fn eq(&self, other: &char) -> bool {
         if let Self::Symbol(t) = &self {

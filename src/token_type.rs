@@ -70,7 +70,10 @@ impl PartialEq<TokenType> for char {
     fn eq(&self, other: &TokenType) -> bool {
         match other {
             TokenType::BinaryOp => {
-                matches!(self, '+' | '-' | '*' | '/' | '%' | '&' | '|' | '<' | '>' | '=')
+                matches!(
+                    self,
+                    '+' | '-' | '*' | '/' | '%' | '&' | '|' | '<' | '>' | '='
+                )
             }
             TokenType::UnaryOp => matches!(self, '-' | '~'),
             _ => false,
